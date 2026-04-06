@@ -365,7 +365,7 @@ function MapContent({
           </AdvancedMarker>
         ))}
 
-        {/* Individual markers - Google Maps native pin style */}
+        {/* Individual markers - Google Maps native pin style with name label */}
         {markers.singles.map((p) => {
           const cfg = getStatusConfig(p.status);
           return (
@@ -375,12 +375,19 @@ function MapContent({
               onClick={() => onSelectProperty(p)}
               title={p.name || cfg.label}
             >
-              <Pin
-                background={cfg.color}
-                borderColor="#fff"
-                glyphColor="#fff"
-                glyph={cfg.icon}
-              />
+              <div className="flex flex-col items-center">
+                <Pin
+                  background={cfg.color}
+                  borderColor="#fff"
+                  glyphColor="#fff"
+                  glyph={cfg.icon}
+                />
+                {p.name && (
+                  <span className="text-[10px] bg-white/90 px-1 rounded shadow-sm text-gray-800 whitespace-nowrap max-w-[80px] truncate -mt-1">
+                    {p.name}
+                  </span>
+                )}
+              </div>
             </AdvancedMarker>
           );
         })}
