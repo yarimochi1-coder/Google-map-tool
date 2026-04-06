@@ -3,7 +3,6 @@ import {
   APIProvider,
   Map,
   AdvancedMarker,
-  Pin,
   useMap,
 } from '@vis.gl/react-google-maps';
 import Supercluster from 'supercluster';
@@ -365,7 +364,7 @@ function MapContent({
           </AdvancedMarker>
         ))}
 
-        {/* Individual markers - Google Maps native pin style with name label */}
+        {/* Individual markers - Google Maps native pin + name label */}
         {markers.singles.map((p) => {
           const cfg = getStatusConfig(p.status);
           return (
@@ -375,15 +374,24 @@ function MapContent({
               onClick={() => onSelectProperty(p)}
               title={p.name || cfg.label}
             >
-              <div className="flex flex-col items-center">
-                <Pin
-                  background={cfg.color}
-                  borderColor="#fff"
-                  glyphColor="#fff"
-                  glyph={cfg.icon}
-                />
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50% 50% 50% 0',
+                  backgroundColor: cfg.color, border: '2px solid #fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#fff', fontSize: 12, fontWeight: 'bold',
+                  transform: 'rotate(-45deg)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+                }}>
+                  <span style={{ transform: 'rotate(45deg)' }}>{cfg.icon}</span>
+                </div>
                 {p.name && (
-                  <span className="text-[10px] bg-white/90 px-1 rounded shadow-sm text-gray-800 whitespace-nowrap max-w-[80px] truncate -mt-1">
+                  <span style={{
+                    fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)',
+                    padding: '0 4px', borderRadius: 3, marginTop: 2,
+                    color: '#333', whiteSpace: 'nowrap', maxWidth: 80,
+                    overflow: 'hidden', textOverflow: 'ellipsis',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}>
                     {p.name}
                   </span>
                 )}
