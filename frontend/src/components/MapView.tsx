@@ -213,7 +213,20 @@ function MapContent({
     [map]
   );
 
-  // Overlay for accurate screen→latlng projection
+  // Track the latest lat/lng from Google Maps mouse/touch events
+  const lastMapLatLng = useRef<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+    const listener = map.addListener('mousemove', (e: google.maps.MapMouseEvent) => {
+      if (e.latLng) {
+        lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      }
+    });
+    return () => google.maps.event.removeListener(listener);
+  }, [map]);
+
+  // For touch: use OverlayView projection for accurate conversion
   const overlayRef = useRef<google.maps.OverlayView | null>(null);
   useEffect(() => {
     if (!map) return;
@@ -223,13 +236,9 @@ function MapContent({
     overlay.draw = () => {};
     overlay.setMap(map);
     overlayRef.current = overlay;
-    return () => {
-      overlay.setMap(null);
-      overlayRef.current = null;
-    };
+    return () => { overlay.setMap(null); overlayRef.current = null; };
   }, [map]);
 
-  // Convert screen coordinates to lat/lng using proper Mercator projection
   const screenToLatLng = useCallback(
     (clientX: number, clientY: number) => {
       if (!map) return null;
@@ -238,6 +247,14 @@ function MapContent({
       const x = clientX - rect.left;
       const y = clientY - rect.top;
 
+      // Method 1: Google Maps mousemove event (PC - most accurate)
+      if (lastMapLatLng.current) {
+        const result = lastMapLatLng.current;
+        lastMapLatLng.current = null;
+        return result;
+      }
+
+      // Method 2: OverlayView projection (touch devices - accurate)
       const projection = overlayRef.current?.getProjection();
       if (projection) {
         const latLng = projection.fromContainerPixelToLatLng(
@@ -248,7 +265,7 @@ function MapContent({
         }
       }
 
-      // Fallback: simple bounds interpolation
+      // Method 3: Bounds interpolation (last resort)
       const ne = map.getBounds()?.getNorthEast();
       const sw = map.getBounds()?.getSouthWest();
       if (!ne || !sw) return null;
