@@ -1,8 +1,7 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import type { Property } from '../types';
-import type { DailyStat } from '../lib/importParser';
 import { STATUS_LIST } from '../lib/statusConfig';
-import { gasGet } from '../lib/gasClient';
+import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
 
 interface AnalyticsProps {
   properties: Property[];
@@ -10,13 +9,6 @@ interface AnalyticsProps {
 }
 
 export function Analytics({ properties, onClose }: AnalyticsProps) {
-  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
-
-  useEffect(() => {
-    gasGet<DailyStat[]>('daily_stats').then((res) => {
-      if (res.success && res.data) setDailyStats(res.data);
-    }).catch(() => {});
-  }, []);
   const stats = useMemo(() => {
     const total = properties.length;
     if (total === 0) return null;
@@ -289,7 +281,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       )}
 
       {/* Past Data Trends */}
-      {dailyStats.length > 0 && <PastDataSection dailyStats={dailyStats} />}
+      <PastDataSection dailyStats={PAST_DAILY_STATS} />
 
       <div className="h-8" />
     </div>
@@ -297,16 +289,16 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
 }
 
 // Past data trends from imported CSV
-function PastDataSection({ dailyStats }: { dailyStats: DailyStat[] }) {
+function PastDataSection({ dailyStats }: { dailyStats: PastDailyStat[] }) {
   const monthly = useMemo(() => {
     const months: Record<string, { visits: number; contacts: number; faceToFace: number; measurements: number; appointments: number; contracts: number; days: number }> = {};
 
     dailyStats.forEach((d) => {
-      const m = d.date.substring(0, 7); // YYYY-MM
+      const m = d.date.substring(0, 7);
       if (!months[m]) months[m] = { visits: 0, contacts: 0, faceToFace: 0, measurements: 0, appointments: 0, contracts: 0, days: 0 };
       months[m].visits += d.visits;
       months[m].contacts += d.contacts;
-      months[m].faceToFace += d.face_to_face;
+      months[m].faceToFace += d.faceToFace;
       months[m].measurements += d.measurements;
       months[m].appointments += d.appointments;
       months[m].contracts += d.contracts;
@@ -316,16 +308,7 @@ function PastDataSection({ dailyStats }: { dailyStats: DailyStat[] }) {
     return Object.entries(months).sort((a, b) => a[0].localeCompare(b[0]));
   }, [dailyStats]);
 
-  const totals = useMemo(() => {
-    return dailyStats.reduce((acc, d) => ({
-      visits: acc.visits + d.visits,
-      contacts: acc.contacts + d.contacts,
-      faceToFace: acc.faceToFace + d.face_to_face,
-      measurements: acc.measurements + d.measurements,
-      appointments: acc.appointments + d.appointments,
-      contracts: acc.contracts + d.contracts,
-    }), { visits: 0, contacts: 0, faceToFace: 0, measurements: 0, appointments: 0, contracts: 0 });
-  }, [dailyStats]);
+  const totals = PAST_TOTALS;
 
   const maxVisits = Math.max(...monthly.map(([, d]) => d.visits), 1);
 
