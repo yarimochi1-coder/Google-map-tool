@@ -242,36 +242,49 @@ function MapContent({
   const screenToLatLng = useCallback(
     (clientX: number, clientY: number) => {
       if (!map) return null;
-      const mapDiv = map.getDiv();
-      const rect = mapDiv.getBoundingClientRect();
-      const x = clientX - rect.left;
-      const y = clientY - rect.top;
 
-      // Method 1: Google Maps mousemove event (PC - most accurate)
+      // Method 1: Google Maps mousemove event (PC)
       if (lastMapLatLng.current) {
         const result = lastMapLatLng.current;
         lastMapLatLng.current = null;
         return result;
       }
 
-      // Method 2: OverlayView projection (touch devices - accurate)
-      const projection = overlayRef.current?.getProjection();
-      if (projection) {
-        const latLng = projection.fromContainerPixelToLatLng(
-          new google.maps.Point(x, y)
-        );
-        if (latLng) {
-          return { lat: latLng.lat(), lng: latLng.lng() };
-        }
-      }
+      // Method 2: Pixel-to-world coordinate math (works at all zoom levels)
+      const mapDiv = map.getDiv();
+      const rect = mapDiv.getBoundingClientRect();
+      const pixelX = clientX - rect.left;
+      const pixelY = clientY - rect.top;
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
 
-      // Method 3: Bounds interpolation (last resort)
-      const ne = map.getBounds()?.getNorthEast();
-      const sw = map.getBounds()?.getSouthWest();
-      if (!ne || !sw) return null;
-      const lat = ne.lat() - (y / rect.height) * (ne.lat() - sw.lat());
-      const lng = sw.lng() + (x / rect.width) * (ne.lng() - sw.lng());
-      return { lat, lng };
+      const center = map.getCenter();
+      const currentZoom = map.getZoom();
+      if (!center || currentZoom == null) return null;
+
+      // Pixels per degree at this zoom level (Mercator)
+      const scale = Math.pow(2, currentZoom) * 256 / 360;
+      const heading = map.getHeading() ?? 0;
+      const headingRad = heading * Math.PI / 180;
+
+      // Offset in pixels from center
+      const dx = pixelX - centerX;
+      const dy = pixelY - centerY;
+
+      // Rotate offset by heading
+      const rotatedDx = dx * Math.cos(headingRad) + dy * Math.sin(headingRad);
+      const rotatedDy = -dx * Math.sin(headingRad) + dy * Math.cos(headingRad);
+
+      // Convert pixel offset to lat/lng offset
+      const lngOffset = rotatedDx / scale;
+      const latRad = center.lat() * Math.PI / 180;
+      const latScale = scale * Math.cos(latRad);
+      const latOffset = -rotatedDy / latScale;
+
+      return {
+        lat: center.lat() + latOffset,
+        lng: center.lng() + lngOffset,
+      };
     },
     [map]
   );
