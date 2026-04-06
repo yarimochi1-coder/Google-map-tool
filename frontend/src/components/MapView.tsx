@@ -3,12 +3,13 @@ import {
   APIProvider,
   Map,
   AdvancedMarker,
+  Pin,
   useMap,
 } from '@vis.gl/react-google-maps';
 import Supercluster from 'supercluster';
 import type { Property } from '../types';
-import { MarkerPin } from './MarkerPin';
 import { ClusterMarker } from './ClusterMarker';
+import { getStatusConfig } from '../lib/statusConfig';
 import { SearchBar } from './SearchBar';
 import { SyncIndicator } from './SyncIndicator';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -364,16 +365,25 @@ function MapContent({
           </AdvancedMarker>
         ))}
 
-        {/* Individual markers */}
-        {markers.singles.map((p) => (
-          <AdvancedMarker
-            key={p.id}
-            position={{ lat: p.lat, lng: p.lng }}
-            onClick={() => onSelectProperty(p)}
-          >
-            <MarkerPin status={p.status} name={p.name} />
-          </AdvancedMarker>
-        ))}
+        {/* Individual markers - Google Maps native pin style */}
+        {markers.singles.map((p) => {
+          const cfg = getStatusConfig(p.status);
+          return (
+            <AdvancedMarker
+              key={p.id}
+              position={{ lat: p.lat, lng: p.lng }}
+              onClick={() => onSelectProperty(p)}
+              title={p.name || cfg.label}
+            >
+              <Pin
+                background={cfg.color}
+                borderColor="#fff"
+                glyphColor="#fff"
+                glyph={cfg.icon}
+              />
+            </AdvancedMarker>
+          );
+        })}
 
         {/* GPS blue dot with direction */}
         {userPosition && (
