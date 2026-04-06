@@ -59,7 +59,7 @@ export function PropertyDetail({
   const statusConfig = getStatusConfig(property.status);
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl z-50 max-h-[85vh] overflow-y-auto">
+    <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-2xl z-50 max-h-[80vh] overflow-y-auto pb-safe">
       <div className="flex justify-center pt-2 pb-1">
         <div className="w-10 h-1 bg-gray-300 rounded-full" />
       </div>

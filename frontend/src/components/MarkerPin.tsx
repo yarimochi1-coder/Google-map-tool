@@ -10,7 +10,7 @@ export function MarkerPin({ status, name }: MarkerPinProps) {
   const config = getStatusConfig(status);
 
   return (
-    <div className="flex flex-col items-center" style={{ transform: 'translate(0, -50%)' }}>
+    <div className="flex flex-col items-center" style={{ transform: 'translate(0, -100%)' }}>
       <div
         className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-lg border-2 border-white"
         style={{ backgroundColor: config.color }}
