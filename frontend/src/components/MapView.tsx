@@ -43,8 +43,12 @@ function MapContent({
 
   // Compass/heading mode: rotate map to match device direction
   const [headingMode, setHeadingMode] = useState(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStartPos = useRef<{ x: number; y: number } | null>(null);
   const [bounds, setBounds] = useState<google.maps.LatLngBounds | null>(null);
   const [zoom, setZoom] = useState(15);
+  const LONG_PRESS_MS = 500;
+  const MOVE_THRESHOLD = 10;
 
   // Follow mode
   const [isFollowing, setIsFollowing] = useState(true);
@@ -208,20 +212,86 @@ function MapContent({
     [map]
   );
 
-  // Use Google Maps native contextmenu event for long press (most accurate)
-  // On mobile, Google Maps fires 'contextmenu' on long press with exact lat/lng
-  const onAddPinRef = useRef(onAddPin);
-  onAddPinRef.current = onAddPin;
+  // Capture accurate lat/lng from Google Maps events
+  const lastMapLatLng = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (!map) return;
-    const listener = map.addListener('contextmenu', (e: google.maps.MapMouseEvent) => {
-      if (e.latLng) {
-        onAddPinRef.current(e.latLng.lat(), e.latLng.lng(), '');
-      }
-    });
-    return () => google.maps.event.removeListener(listener);
+    const listeners = [
+      // PC: mousemove gives continuous accurate coordinates
+      map.addListener('mousemove', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      }),
+      // Both PC & mobile: mousedown fires on touch start too
+      map.addListener('mousedown', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      }),
+      // Mobile: click gives accurate lat/lng (fires after touch)
+      map.addListener('click', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      }),
+    ];
+    return () => listeners.forEach((l) => google.maps.event.removeListener(l));
   }, [map]);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    pressStartPos.current = null;
+  }, []);
+
+  // Touch long press
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (e.touches.length !== 1) { cancelLongPress(); return; }
+      const touch = e.touches[0];
+      pressStartPos.current = { x: touch.clientX, y: touch.clientY };
+      longPressTimer.current = setTimeout(() => {
+        if (lastMapLatLng.current) {
+          onAddPin(lastMapLatLng.current.lat, lastMapLatLng.current.lng, '');
+        }
+        pressStartPos.current = null;
+      }, LONG_PRESS_MS);
+    },
+    [onAddPin, cancelLongPress]
+  );
+
+  const handleTouchEnd = useCallback(() => { cancelLongPress(); }, [cancelLongPress]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length > 1) { cancelLongPress(); return; }
+    if (!pressStartPos.current || !longPressTimer.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - pressStartPos.current.x;
+    const dy = touch.clientY - pressStartPos.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) cancelLongPress();
+  }, [cancelLongPress]);
+
+  // Mouse long press (PC)
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      pressStartPos.current = { x: e.clientX, y: e.clientY };
+      longPressTimer.current = setTimeout(() => {
+        if (lastMapLatLng.current) {
+          onAddPin(lastMapLatLng.current.lat, lastMapLatLng.current.lng, '');
+        }
+        pressStartPos.current = null;
+      }, LONG_PRESS_MS);
+    },
+    [onAddPin]
+  );
+
+  const handleMouseUp = useCallback(() => { cancelLongPress(); }, [cancelLongPress]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!pressStartPos.current || !longPressTimer.current) return;
+    const dx = e.clientX - pressStartPos.current.x;
+    const dy = e.clientY - pressStartPos.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) cancelLongPress();
+  }, [cancelLongPress]);
 
   const handlePlaceSelect = useCallback(
     (location: { lat: number; lng: number; address: string }) => {
@@ -233,7 +303,15 @@ function MapContent({
   );
 
   return (
-    <div className="relative w-full h-full">
+    <div
+      className="relative w-full h-full"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseMove={handleMouseMove}
+    >
       <SearchBar onPlaceSelect={handlePlaceSelect} />
       <SyncIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} />
 
