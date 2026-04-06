@@ -18,6 +18,7 @@ function createBlankProperty(overrides: Partial<Property>): Property {
     estimated_area: '',
     contract_amount: '',
     rejection_reason: '',
+    revisit: '',
     last_visit_date: '',
     created_at: now,
     updated_at: now,

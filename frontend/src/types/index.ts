@@ -42,6 +42,14 @@ export interface Property {
   updated_at: string;
   user_id: string;
   visit_count: number;
+  revisit: string; // '' or ISO date when flagged for revisit
+}
+
+export interface MonthlyGoal {
+  month: string; // YYYY-MM
+  targetContracts: number;
+  targetAppointments: number;
+  targetVisits: number;
 }
 
 export interface SyncQueueItem {

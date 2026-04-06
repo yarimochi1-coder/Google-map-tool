@@ -8,9 +8,11 @@ import { NewPinModal } from './components/NewPinModal';
 import { useProperties } from './hooks/useProperties';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { Analytics } from './components/Analytics';
+import { VisitPlan } from './components/VisitPlan';
 import { useUserName } from './hooks/useUserName';
+import { useGeolocation } from './hooks/useGeolocation';
 
-type View = 'map' | 'dashboard' | 'analytics';
+type View = 'map' | 'dashboard' | 'analytics' | 'plan';
 
 export default function App() {
   const [view, setView] = useState<View>('map');
@@ -19,6 +21,7 @@ export default function App() {
   const [newPinLocation, setNewPinLocation] = useState<{ lat: number; lng: number } | null>(null);
   const isOnline = useOnlineStatus();
   const { userName, setUserName } = useUserName();
+  const { position: userPosition } = useGeolocation();
 
   const {
     properties,
@@ -58,6 +61,7 @@ export default function App() {
         estimated_area: '',
         contract_amount: '',
         rejection_reason: '',
+        revisit: '',
         last_visit_date: new Date().toLocaleString('ja-JP'),
         user_id: '',
       });
@@ -94,9 +98,16 @@ export default function App() {
             properties={properties}
             onClose={() => setView('map')}
           />
-        ) : (
+        ) : view === 'analytics' ? (
           <Analytics
             properties={properties}
+            onClose={() => setView('map')}
+          />
+        ) : (
+          <VisitPlan
+            properties={properties}
+            userPosition={userPosition}
+            onSelectProperty={(p) => { setSelectedProperty(p); setView('map'); }}
             onClose={() => setView('map')}
           />
         )}
@@ -167,6 +178,15 @@ export default function App() {
               <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
             </svg>
             <span className="text-[10px] font-bold">集計</span>
+          </button>
+          <button
+            onClick={() => setView('plan')}
+            className="flex-1 py-3 flex flex-col items-center gap-0.5 text-gray-400"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M14 6l-1-2H5v17h2v-7h5l1 2h7V6h-6zm4 8h-4l-1-2H7V6h5l1 2h5v6z" />
+            </svg>
+            <span className="text-[10px] font-bold">プラン</span>
           </button>
           <button
             onClick={() => setView('analytics')}

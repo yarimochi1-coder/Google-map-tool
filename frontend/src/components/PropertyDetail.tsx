@@ -115,6 +115,19 @@ export function PropertyDetail({
           +1 訪問記録
         </button>
         <button
+          onClick={() => {
+            const isRevisit = !!property.revisit;
+            onUpdate(property.id, { revisit: isRevisit ? '' : new Date().toISOString() });
+          }}
+          className={`py-3 px-4 rounded-xl font-bold text-sm ${
+            property.revisit
+              ? 'bg-orange-500 text-white active:bg-orange-600'
+              : 'bg-orange-50 text-orange-500 border border-orange-300 active:bg-orange-100'
+          }`}
+        >
+          {property.revisit ? '再訪問 ✓' : '再訪問'}
+        </button>
+        <button
           onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
           className={`flex-1 py-3 rounded-xl font-bold text-sm ${
             isEditing

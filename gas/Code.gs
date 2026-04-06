@@ -1,6 +1,6 @@
 var SHEET_NAME = 'properties';
 var HISTORY_SHEET_NAME = 'visit_history';
-var HEADERS = ['id','lat','lng','address','name','status','building_age','deterioration','photo_url','memo','staff','roof_type','estimated_area','contract_amount','rejection_reason','last_visit_date','created_at','updated_at','user_id','visit_count'];
+var HEADERS = ['id','lat','lng','address','name','status','building_age','deterioration','photo_url','memo','staff','roof_type','estimated_area','contract_amount','rejection_reason','revisit','last_visit_date','created_at','updated_at','user_id','visit_count'];
 var HISTORY_HEADERS = ['id','property_id','status','staff','visited_at','memo'];
 
 function doGet(e) {
