@@ -213,81 +213,56 @@ function MapContent({
     [map]
   );
 
-  // Track the latest lat/lng from Google Maps mouse/touch events
+  // Capture lat/lng directly from Google Maps native events (most accurate method)
   const lastMapLatLng = useRef<{ lat: number; lng: number } | null>(null);
-
-  useEffect(() => {
-    if (!map) return;
-    const listener = map.addListener('mousemove', (e: google.maps.MapMouseEvent) => {
-      if (e.latLng) {
-        lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
-      }
-    });
-    return () => google.maps.event.removeListener(listener);
-  }, [map]);
-
-  // For touch: use OverlayView projection for accurate conversion
   const overlayRef = useRef<google.maps.OverlayView | null>(null);
+
   useEffect(() => {
     if (!map) return;
+
+    // Set up OverlayView for touch coordinate conversion
     const overlay = new google.maps.OverlayView();
     overlay.onAdd = () => {};
     overlay.onRemove = () => {};
     overlay.draw = () => {};
     overlay.setMap(map);
     overlayRef.current = overlay;
-    return () => { overlay.setMap(null); overlayRef.current = null; };
-  }, [map]);
 
-  const screenToLatLng = useCallback(
-    (clientX: number, clientY: number) => {
-      if (!map) return null;
+    // Mouse events (PC)
+    const listeners = [
+      map.addListener('mousedown', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      }),
+      map.addListener('mousemove', (e: google.maps.MapMouseEvent) => {
+        if (e.latLng) lastMapLatLng.current = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+      }),
+    ];
 
-      // Method 1: Google Maps mousemove event (PC)
-      if (lastMapLatLng.current) {
-        const result = lastMapLatLng.current;
-        lastMapLatLng.current = null;
-        return result;
-      }
-
-      // Method 2: Pixel-to-world coordinate math (works at all zoom levels)
-      const mapDiv = map.getDiv();
+    // Touch events: convert via OverlayView projection on the map's own div
+    const mapDiv = map.getDiv();
+    const touchHandler = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
       const rect = mapDiv.getBoundingClientRect();
-      const pixelX = clientX - rect.left;
-      const pixelY = clientY - rect.top;
-      const centerX = rect.width / 2;
-      const centerY = rect.height / 2;
+      const x = touch.clientX - rect.left;
+      const y = touch.clientY - rect.top;
+      const proj = overlayRef.current?.getProjection();
+      if (proj) {
+        const latLng = proj.fromContainerPixelToLatLng(new google.maps.Point(x, y));
+        if (latLng) {
+          lastMapLatLng.current = { lat: latLng.lat(), lng: latLng.lng() };
+        }
+      }
+    };
+    mapDiv.addEventListener('touchstart', touchHandler, { passive: true });
 
-      const center = map.getCenter();
-      const currentZoom = map.getZoom();
-      if (!center || currentZoom == null) return null;
-
-      // Pixels per degree at this zoom level (Mercator)
-      const scale = Math.pow(2, currentZoom) * 256 / 360;
-      const heading = map.getHeading() ?? 0;
-      const headingRad = heading * Math.PI / 180;
-
-      // Offset in pixels from center
-      const dx = pixelX - centerX;
-      const dy = pixelY - centerY;
-
-      // Rotate offset by heading
-      const rotatedDx = dx * Math.cos(headingRad) + dy * Math.sin(headingRad);
-      const rotatedDy = -dx * Math.sin(headingRad) + dy * Math.cos(headingRad);
-
-      // Convert pixel offset to lat/lng offset
-      const lngOffset = rotatedDx / scale;
-      const latRad = center.lat() * Math.PI / 180;
-      const latScale = scale * Math.cos(latRad);
-      const latOffset = -rotatedDy / latScale;
-
-      return {
-        lat: center.lat() + latOffset,
-        lng: center.lng() + lngOffset,
-      };
-    },
-    [map]
-  );
+    return () => {
+      listeners.forEach((l) => google.maps.event.removeListener(l));
+      mapDiv.removeEventListener('touchstart', touchHandler);
+      overlay.setMap(null);
+      overlayRef.current = null;
+    };
+  }, [map]);
 
   const cancelLongPress = useCallback(() => {
     if (longPressTimer.current) {
@@ -305,8 +280,11 @@ function MapContent({
       }
       const touch = e.touches[0];
       pressStartPos.current = { x: touch.clientX, y: touch.clientY };
+      // Capture the lat/lng at touch start from Google Maps
+      const startCoords = lastMapLatLng.current ? { ...lastMapLatLng.current } : null;
       longPressTimer.current = setTimeout(() => {
-        const coords = screenToLatLng(touch.clientX, touch.clientY);
+        // Use coords captured at touch start (most accurate)
+        const coords = startCoords ?? lastMapLatLng.current;
         if (coords) {
           longPressCoord.current = coords;
           onAddPin(coords.lat, coords.lng, '');
@@ -314,7 +292,7 @@ function MapContent({
         pressStartPos.current = null;
       }, LONG_PRESS_MS);
     },
-    [screenToLatLng, onAddPin, cancelLongPress]
+    [onAddPin, cancelLongPress]
   );
 
   const handleTouchEnd = useCallback(() => {
@@ -339,8 +317,9 @@ function MapContent({
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
       pressStartPos.current = { x: e.clientX, y: e.clientY };
+      const startCoords = lastMapLatLng.current ? { ...lastMapLatLng.current } : null;
       longPressTimer.current = setTimeout(() => {
-        const coords = screenToLatLng(e.clientX, e.clientY);
+        const coords = startCoords ?? lastMapLatLng.current;
         if (coords) {
           longPressCoord.current = coords;
           onAddPin(coords.lat, coords.lng, '');
@@ -348,7 +327,7 @@ function MapContent({
         pressStartPos.current = null;
       }, LONG_PRESS_MS);
     },
-    [screenToLatLng, onAddPin]
+    [onAddPin]
   );
 
   const handleMouseUp = useCallback(() => {
