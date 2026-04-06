@@ -234,51 +234,33 @@ function MapContent({
     return () => listeners.forEach((l) => google.maps.event.removeListener(l));
   }, [map]);
 
-  // Coordinate converter using map bounds
-  const screenToLatLng = useCallback((clientX: number, clientY: number) => {
-    if (!map) return null;
-    if (lastMapLatLng.current) return { ...lastMapLatLng.current };
-    const mapDiv = map.getDiv();
-    const rect = mapDiv.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const b = map.getBounds();
-    if (!b) return null;
-    const ne = b.getNorthEast();
-    const sw = b.getSouthWest();
-    return {
-      lat: ne.lat() - (y / rect.height) * (ne.lat() - sw.lat()),
-      lng: sw.lng() + (x / rect.width) * (ne.lng() - sw.lng()),
-    };
-  }, [map]);
-
-  // Attach native touch/mouse events directly to the Google Maps div
+  // Long press: use map CENTER coordinates (100% accurate, no screen conversion needed)
   const onAddPinRef = useRef(onAddPin);
   onAddPinRef.current = onAddPin;
-  const screenToLatLngRef = useRef(screenToLatLng);
-  screenToLatLngRef.current = screenToLatLng;
 
   useEffect(() => {
     if (!map) return;
     const mapDiv = map.getDiv();
     let timer: ReturnType<typeof setTimeout> | null = null;
     let startPos: { x: number; y: number } | null = null;
-    let savedCoords: { lat: number; lng: number } | null = null;
 
     const cancel = () => {
       if (timer) { clearTimeout(timer); timer = null; }
       startPos = null;
     };
 
+    const addPinAtCenter = () => {
+      const center = map.getCenter();
+      if (center) {
+        onAddPinRef.current(center.lat(), center.lng(), '');
+      }
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) { cancel(); return; }
       const t = e.touches[0];
       startPos = { x: t.clientX, y: t.clientY };
-      savedCoords = screenToLatLngRef.current(t.clientX, t.clientY);
-      timer = setTimeout(() => {
-        if (savedCoords) onAddPinRef.current(savedCoords.lat, savedCoords.lng, '');
-        startPos = null;
-      }, LONG_PRESS_MS);
+      timer = setTimeout(addPinAtCenter, LONG_PRESS_MS);
     };
 
     const onTouchEnd = () => cancel();
@@ -292,12 +274,17 @@ function MapContent({
       if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) cancel();
     };
 
+    // PC: use Google Maps mousemove for accurate coords
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       startPos = { x: e.clientX, y: e.clientY };
-      savedCoords = lastMapLatLng.current ? { ...lastMapLatLng.current } : screenToLatLngRef.current(e.clientX, e.clientY);
       timer = setTimeout(() => {
-        if (savedCoords) onAddPinRef.current(savedCoords.lat, savedCoords.lng, '');
+        // PC: use lastMapLatLng from mousemove (accurate), fallback to center
+        if (lastMapLatLng.current) {
+          onAddPinRef.current(lastMapLatLng.current.lat, lastMapLatLng.current.lng, '');
+        } else {
+          addPinAtCenter();
+        }
         startPos = null;
       }, LONG_PRESS_MS);
     };
@@ -342,6 +329,14 @@ function MapContent({
     <div className="relative w-full h-full">
       <SearchBar onPlaceSelect={handlePlaceSelect} />
       <SyncIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} />
+
+      {/* Crosshair - shows where pin will be placed */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+        <div className="w-6 h-6 relative opacity-50">
+          <div className="absolute top-1/2 left-0 right-0 h-px bg-black" />
+          <div className="absolute left-1/2 top-0 bottom-0 w-px bg-black" />
+        </div>
+      </div>
 
       <Map
         mapId={MAP_ID}
