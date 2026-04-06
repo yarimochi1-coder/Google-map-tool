@@ -147,9 +147,9 @@ export default function App() {
         />
       )}
 
-      {/* Bottom navigation */}
-      {view === 'map' && !currentSelected && !newPinLocation && (
-        <div className="bg-white border-t border-gray-200 flex safe-bottom">
+      {/* Bottom navigation - always visible */}
+      {!currentSelected && !newPinLocation && !showImport && (
+        <div className="bg-white border-t border-gray-200 flex safe-bottom z-50 relative">
           <button
             onClick={() => setView('map')}
             className={`flex-1 py-3 flex flex-col items-center gap-0.5 ${
@@ -172,7 +172,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setView('dashboard')}
-            className="flex-1 py-3 flex flex-col items-center gap-0.5 text-gray-400"
+            className={`flex-1 py-3 flex flex-col items-center gap-0.5 ${view === 'dashboard' ? 'text-blue-500' : 'text-gray-400'}`}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
               <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z" />
@@ -181,7 +181,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setView('plan')}
-            className="flex-1 py-3 flex flex-col items-center gap-0.5 text-gray-400"
+            className={`flex-1 py-3 flex flex-col items-center gap-0.5 ${view === 'plan' ? 'text-blue-500' : 'text-gray-400'}`}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
               <path d="M14 6l-1-2H5v17h2v-7h5l1 2h7V6h-6zm4 8h-4l-1-2H7V6h5l1 2h5v6z" />
@@ -190,7 +190,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setView('analytics')}
-            className="flex-1 py-3 flex flex-col items-center gap-0.5 text-gray-400"
+            className={`flex-1 py-3 flex flex-col items-center gap-0.5 ${view === 'analytics' ? 'text-blue-500' : 'text-gray-400'}`}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
               <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" />

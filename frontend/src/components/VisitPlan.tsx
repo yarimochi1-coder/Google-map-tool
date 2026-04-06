@@ -187,7 +187,7 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-50 z-50 overflow-y-auto">
+    <div className="absolute inset-0 bg-gray-50 overflow-y-auto pb-16">
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 py-3">
