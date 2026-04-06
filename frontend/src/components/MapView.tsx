@@ -50,8 +50,8 @@ function MapContent({
   const LONG_PRESS_MS = 500;
   const MOVE_THRESHOLD = 10;
 
-  // Follow mode
-  const [isFollowing, setIsFollowing] = useState(true);
+  // Follow mode - default OFF, only enabled when user taps center button
+  const [isFollowing, setIsFollowing] = useState(false);
 
   useEffect(() => {
     if (userPosition && map && isFollowing) {
@@ -59,9 +59,11 @@ function MapContent({
     }
   }, [userPosition, map, isFollowing]);
 
+  // Center on user once at startup, then stop
   const hasCentered = useRef(false);
   useEffect(() => {
     if (userPosition && map && !hasCentered.current) {
+      map.panTo(userPosition);
       map.setZoom(17);
       hasCentered.current = true;
     }
@@ -242,20 +244,42 @@ function MapContent({
     pressStartPos.current = null;
   }, []);
 
+  // Convert touch position to lat/lng using map bounds (reliable on all devices)
+  const touchToLatLng = useCallback((clientX: number, clientY: number) => {
+    if (!map) return null;
+    // If Google Maps gave us coordinates, use those (most accurate)
+    if (lastMapLatLng.current) return { ...lastMapLatLng.current };
+    // Fallback: calculate from bounds
+    const mapDiv = map.getDiv();
+    const rect = mapDiv.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const bounds = map.getBounds();
+    if (!bounds) return null;
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const lat = ne.lat() - (y / rect.height) * (ne.lat() - sw.lat());
+    const lng = sw.lng() + (x / rect.width) * (ne.lng() - sw.lng());
+    return { lat, lng };
+  }, [map]);
+
   // Touch long press
   const handleTouchStart = useCallback(
     (e: React.TouchEvent) => {
       if (e.touches.length !== 1) { cancelLongPress(); return; }
       const touch = e.touches[0];
       pressStartPos.current = { x: touch.clientX, y: touch.clientY };
+      // Capture coords immediately at touch start
+      const touchCoords = touchToLatLng(touch.clientX, touch.clientY);
       longPressTimer.current = setTimeout(() => {
-        if (lastMapLatLng.current) {
-          onAddPin(lastMapLatLng.current.lat, lastMapLatLng.current.lng, '');
+        const coords = touchCoords;
+        if (coords) {
+          onAddPin(coords.lat, coords.lng, '');
         }
         pressStartPos.current = null;
       }, LONG_PRESS_MS);
     },
-    [onAddPin, cancelLongPress]
+    [onAddPin, cancelLongPress, touchToLatLng]
   );
 
   const handleTouchEnd = useCallback(() => { cancelLongPress(); }, [cancelLongPress]);
@@ -274,14 +298,16 @@ function MapContent({
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
       pressStartPos.current = { x: e.clientX, y: e.clientY };
+      const mouseCoords = lastMapLatLng.current ? { ...lastMapLatLng.current } : touchToLatLng(e.clientX, e.clientY);
       longPressTimer.current = setTimeout(() => {
-        if (lastMapLatLng.current) {
-          onAddPin(lastMapLatLng.current.lat, lastMapLatLng.current.lng, '');
+        const coords = mouseCoords;
+        if (coords) {
+          onAddPin(coords.lat, coords.lng, '');
         }
         pressStartPos.current = null;
       }, LONG_PRESS_MS);
     },
-    [onAddPin]
+    [onAddPin, touchToLatLng]
   );
 
   const handleMouseUp = useCallback(() => { cancelLongPress(); }, [cancelLongPress]);
