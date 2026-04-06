@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { Property, MonthlyGoal } from '../types';
+import type { DailyStat } from '../lib/importParser';
 import { getStatusConfig } from '../lib/statusConfig';
+import { gasGet } from '../lib/gasClient';
 
 interface VisitPlanProps {
   properties: Property[];
@@ -47,7 +49,15 @@ function getWorkdaysLeft(): number {
 export function VisitPlan({ properties, userPosition, onSelectProperty, onClose }: VisitPlanProps) {
   const [showGoalEdit, setShowGoalEdit] = useState(false);
   const [goalContracts, setGoalContracts] = useState('5');
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const currentMonth = getCurrentMonth();
+
+  // Fetch past daily stats
+  useEffect(() => {
+    gasGet<DailyStat[]>('daily_stats').then((res) => {
+      if (res.success && res.data) setDailyStats(res.data);
+    }).catch(() => {});
+  }, []);
 
   // Load saved goal
   useEffect(() => {
@@ -93,13 +103,28 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     ).length;
     const currentVisits = monthProperties.length;
 
-    // Calculate conversion rates from all data (or use defaults)
-    const total = properties.length;
-    const contractCount = properties.filter((p) => p.status === 'contract' || p.status === 'completed').length;
-    const appoCount = properties.filter((p) => p.status === 'appointment').length;
-    // Use actual rates if enough data, otherwise use defaults
-    const appoToContract = appoCount > 5 ? contractCount / appoCount : 0.33;
-    const visitToAppo = total > 20 ? (appoCount + contractCount) / total : 0.03;
+    // Calculate conversion rates from past daily_stats + current app data
+    const pastTotals = dailyStats.reduce((acc, d) => ({
+      visits: acc.visits + d.visits,
+      contacts: acc.contacts + d.contacts,
+      faceToFace: acc.faceToFace + d.face_to_face,
+      measurements: acc.measurements + d.measurements,
+      appointments: acc.appointments + d.appointments,
+      contracts: acc.contracts + d.contracts,
+    }), { visits: 0, contacts: 0, faceToFace: 0, measurements: 0, appointments: 0, contracts: 0 });
+
+    // Add current app data
+    const appContracts = properties.filter((p) => p.status === 'contract' || p.status === 'completed').length;
+    const appAppos = properties.filter((p) => p.status === 'appointment').length;
+    const totalVisits = pastTotals.visits + properties.length;
+    const totalAppos = pastTotals.appointments + appAppos;
+    const totalContracts = pastTotals.contracts + appContracts;
+
+    const hasPastData = pastTotals.visits > 0;
+    const appoToContract = totalAppos > 0 ? totalContracts / totalAppos : 0.33;
+    const visitToAppo = totalVisits > 0 ? totalAppos / totalVisits : 0.03;
+    const contactRate = pastTotals.visits > 0 ? pastTotals.contacts / pastTotals.visits : 0.26;
+    const faceToFaceRate = pastTotals.contacts > 0 ? pastTotals.faceToFace / pastTotals.contacts : 0.37;
 
     const neededContracts = Math.max(targetContracts - currentContracts, 0);
     const neededAppos = Math.ceil(neededContracts / appoToContract);
@@ -153,9 +178,12 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
       todayList,
       revisitCount: revisitList.length,
       hotLeadCount: hotLeads.length,
-      hasEnoughData: total > 20,
+      hasEnoughData: hasPastData || properties.length > 20,
+      contactRate: Math.round(contactRate * 100),
+      faceToFaceRate: Math.round(faceToFaceRate * 100),
+      pastDataDays: dailyStats.length,
     };
-  }, [properties, userPosition, goalContracts, currentMonth]);
+  }, [properties, userPosition, goalContracts, currentMonth, dailyStats]);
 
   function getRevisitReason(p: Property): string {
     const days = daysSince(p.last_visit_date);
@@ -269,8 +297,14 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
               <span className="font-bold text-blue-600">1日あたり目標訪問数</span>
               <span className="font-black text-blue-600 text-lg">{plan.visitsPerDay}件</span>
             </div>
+            {plan.hasEnoughData && (
+              <div className="flex justify-between text-xs border-t pt-1 mt-1">
+                <span className="text-gray-500">接触率 {plan.contactRate}% / 対面率 {plan.faceToFaceRate}%</span>
+                <span className="text-[10px] text-gray-400">{plan.pastDataDays}日分の実績</span>
+              </div>
+            )}
             {!plan.hasEnoughData && (
-              <p className="text-[10px] text-orange-500 mt-1">※ データ不足のため参考値です。データが20件以上になると実績ベースの数値になります。</p>
+              <p className="text-[10px] text-orange-500 mt-1">※ 過去データをインポートすると実績ベースの数値になります。</p>
             )}
           </div>
         </div>

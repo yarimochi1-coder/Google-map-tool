@@ -2,6 +2,8 @@ var SHEET_NAME = 'properties';
 var HISTORY_SHEET_NAME = 'visit_history';
 var HEADERS = ['id','lat','lng','address','name','status','building_age','deterioration','photo_url','memo','staff','roof_type','estimated_area','contract_amount','rejection_reason','revisit','last_visit_date','created_at','updated_at','user_id','visit_count'];
 var HISTORY_HEADERS = ['id','property_id','status','staff','visited_at','memo'];
+var DAILY_STATS_NAME = 'daily_stats';
+var DAILY_STATS_HEADERS = ['date','visits','contacts','face_to_face','measurements','appointments','contracts','notes'];
 
 function doGet(e) {
   try {
@@ -20,6 +22,8 @@ function doGet(e) {
         return jsonResponse({ success: true, data: getHistory(e.parameter.property_id) });
       case 'analytics':
         return jsonResponse({ success: true, data: getAnalytics() });
+      case 'daily_stats':
+        return jsonResponse({ success: true, data: getDailyStats() });
       default:
         return jsonResponse({ success: false, error: 'Unknown action: ' + action });
     }
@@ -52,6 +56,8 @@ function doPost(e) {
           return jsonResponse({ success: true, data: bulkImport(body.data) });
         case 'log_visit':
           return jsonResponse({ success: true, data: logVisit(body.data) });
+        case 'import_daily_stats':
+          return jsonResponse({ success: true, data: importDailyStats(body.data) });
         default:
           return jsonResponse({ success: false, error: 'Unknown action: ' + action });
       }
@@ -86,6 +92,55 @@ function getHistorySheet() {
 }
 
 // --- CRUD Operations ---
+
+function getDailyStatsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(DAILY_STATS_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(DAILY_STATS_NAME);
+    sheet.getRange(1, 1, 1, DAILY_STATS_HEADERS.length).setValues([DAILY_STATS_HEADERS]);
+  }
+  return sheet;
+}
+
+function getDailyStats() {
+  var sheet = getDailyStatsSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  var headers = data[0];
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = data[i][j];
+    }
+    obj.visits = Number(obj.visits) || 0;
+    obj.contacts = Number(obj.contacts) || 0;
+    obj.face_to_face = Number(obj.face_to_face) || 0;
+    obj.measurements = Number(obj.measurements) || 0;
+    obj.appointments = Number(obj.appointments) || 0;
+    obj.contracts = Number(obj.contracts) || 0;
+    results.push(obj);
+  }
+  return results;
+}
+
+function importDailyStats(dataArray) {
+  var sheet = getDailyStatsSheet();
+  var rows = [];
+  for (var i = 0; i < dataArray.length; i++) {
+    var d = dataArray[i];
+    var row = DAILY_STATS_HEADERS.map(function(h) {
+      return d[h] || (h === 'notes' ? '' : 0);
+    });
+    rows.push(row);
+  }
+  if (rows.length > 0) {
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, rows.length, DAILY_STATS_HEADERS.length).setValues(rows);
+  }
+  return { imported: rows.length };
+}
 
 function getAllProperties() {
   var sheet = getSheet();

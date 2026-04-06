@@ -1,5 +1,65 @@
 import type { Property } from '../types';
 
+export interface DailyStat {
+  date: string;
+  visits: number;
+  contacts: number;
+  face_to_face: number;
+  measurements: number;
+  appointments: number;
+  contracts: number;
+  notes: string;
+}
+
+export function parseDailyStatsCSV(csvString: string): DailyStat[] {
+  const lines = csvString.trim().split('\n');
+  if (lines.length < 2) return [];
+
+  const results: DailyStat[] = [];
+  let currentYear = '2025';
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(',').map((c) => c.trim());
+    const dateStr = cols[0];
+
+    if (!dateStr || dateStr === '合計' || dateStr === '目標数値(1日)' || dateStr === '目標数値(一月)' || dateStr === '') continue;
+
+    // Detect month/day format like "9/26" or "10/1"
+    const dateMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (!dateMatch) continue;
+
+    const month = parseInt(dateMatch[1]);
+    const day = parseInt(dateMatch[2]);
+
+    // Handle year rollover (if month goes from 12 to 1)
+    if (month === 1 && i > 1) currentYear = '2026';
+
+    const visits = parseInt(cols[1]) || 0;
+    const contacts = parseInt(cols[2]) || 0;
+    const faceToFace = parseInt(cols[3]) || 0;
+    const measurements = parseInt(cols[4]) || 0;
+    const appointments = parseInt(cols[5]) || 0;
+    const contracts = parseInt(cols[6]) || 0;
+    const notes = cols[12] || '';
+
+    // Skip rows with no data
+    if (visits === 0 && contacts === 0 && contracts === 0) continue;
+
+    results.push({
+      date: `${currentYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      visits,
+      contacts,
+      face_to_face: faceToFace,
+      measurements,
+      appointments,
+      contracts,
+      notes,
+    });
+  }
+
+  return results;
+}
+
 function createBlankProperty(overrides: Partial<Property>): Property {
   const now = new Date().toISOString();
   return {

@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import type { Property } from '../types';
+import type { DailyStat } from '../lib/importParser';
 import { STATUS_LIST } from '../lib/statusConfig';
+import { gasGet } from '../lib/gasClient';
 
 interface AnalyticsProps {
   properties: Property[];
@@ -8,6 +10,13 @@ interface AnalyticsProps {
 }
 
 export function Analytics({ properties, onClose }: AnalyticsProps) {
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+
+  useEffect(() => {
+    gasGet<DailyStat[]>('daily_stats').then((res) => {
+      if (res.success && res.data) setDailyStats(res.data);
+    }).catch(() => {});
+  }, []);
   const stats = useMemo(() => {
     const total = properties.length;
     if (total === 0) return null;
@@ -279,7 +288,118 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         </div>
       )}
 
+      {/* Past Data Trends */}
+      {dailyStats.length > 0 && <PastDataSection dailyStats={dailyStats} />}
+
       <div className="h-8" />
     </div>
+  );
+}
+
+// Past data trends from imported CSV
+function PastDataSection({ dailyStats }: { dailyStats: DailyStat[] }) {
+  const monthly = useMemo(() => {
+    const months: Record<string, { visits: number; contacts: number; faceToFace: number; measurements: number; appointments: number; contracts: number; days: number }> = {};
+
+    dailyStats.forEach((d) => {
+      const m = d.date.substring(0, 7); // YYYY-MM
+      if (!months[m]) months[m] = { visits: 0, contacts: 0, faceToFace: 0, measurements: 0, appointments: 0, contracts: 0, days: 0 };
+      months[m].visits += d.visits;
+      months[m].contacts += d.contacts;
+      months[m].faceToFace += d.face_to_face;
+      months[m].measurements += d.measurements;
+      months[m].appointments += d.appointments;
+      months[m].contracts += d.contracts;
+      months[m].days++;
+    });
+
+    return Object.entries(months).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [dailyStats]);
+
+  const totals = useMemo(() => {
+    return dailyStats.reduce((acc, d) => ({
+      visits: acc.visits + d.visits,
+      contacts: acc.contacts + d.contacts,
+      faceToFace: acc.faceToFace + d.face_to_face,
+      measurements: acc.measurements + d.measurements,
+      appointments: acc.appointments + d.appointments,
+      contracts: acc.contracts + d.contracts,
+    }), { visits: 0, contacts: 0, faceToFace: 0, measurements: 0, appointments: 0, contracts: 0 });
+  }, [dailyStats]);
+
+  const maxVisits = Math.max(...monthly.map(([, d]) => d.visits), 1);
+
+  return (
+    <>
+      {/* Overall past stats */}
+      <div className="px-4 pb-4">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">過去実績（インポート済み {dailyStats.length}日分）</h2>
+        <div className="bg-white rounded-xl shadow-sm p-3">
+          <div className="grid grid-cols-3 gap-2 text-center mb-3">
+            <div>
+              <p className="text-[10px] text-gray-400">総訪問</p>
+              <p className="text-lg font-black text-gray-800">{totals.visits.toLocaleString()}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-400">総アポ</p>
+              <p className="text-lg font-black text-blue-600">{totals.appointments}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-gray-400">総成約</p>
+              <p className="text-lg font-black text-red-600">{totals.contracts}</p>
+            </div>
+          </div>
+          <div className="space-y-1 text-xs text-gray-600">
+            <div className="flex justify-between">
+              <span>接触率</span>
+              <span className="font-bold">{totals.visits > 0 ? (totals.contacts / totals.visits * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span>対面率</span>
+              <span className="font-bold">{totals.visits > 0 ? (totals.faceToFace / totals.visits * 100).toFixed(1) : 0}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span>アポ率（対訪問）</span>
+              <span className="font-bold">{totals.visits > 0 ? (totals.appointments / totals.visits * 100).toFixed(2) : 0}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span>成約率（対アポ）</span>
+              <span className="font-bold">{totals.appointments > 0 ? (totals.contracts / totals.appointments * 100).toFixed(1) : 0}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly trend */}
+      <div className="px-4 pb-4">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">月別トレンド</h2>
+        <div className="space-y-2">
+          {monthly.map(([month, d]) => {
+            const contactRate = d.visits > 0 ? (d.contacts / d.visits * 100).toFixed(0) : '0';
+            return (
+              <div key={month} className="bg-white rounded-xl shadow-sm p-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-bold text-gray-700">{month.replace('-', '年')}月</span>
+                  <span className="text-xs text-gray-400">{d.days}日稼働</span>
+                </div>
+                <div className="h-4 bg-gray-100 rounded-full overflow-hidden mb-1">
+                  <div
+                    className="h-full rounded-full bg-blue-400"
+                    style={{ width: `${(d.visits / maxVisits) * 100}%`, minWidth: '4px' }}
+                  />
+                </div>
+                <div className="flex gap-3 text-[10px] text-gray-500">
+                  <span>訪問{d.visits}</span>
+                  <span>接触{d.contacts}({contactRate}%)</span>
+                  <span>対面{d.faceToFace}</span>
+                  <span className="text-blue-600 font-bold">アポ{d.appointments}</span>
+                  <span className="text-red-600 font-bold">成約{d.contracts}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
