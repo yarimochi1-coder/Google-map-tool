@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { Property } from '../types';
 import { getStatusConfig } from '../lib/statusConfig';
+import { PAST_TOTALS } from '../lib/pastData';
 
 interface VisitPlanProps {
   properties: Property[];
@@ -20,16 +21,27 @@ interface KpiGoal {
   contracts: number;
 }
 
-const GOAL_STORAGE_KEY = 'paint-map-kpi-goals-v2';
+const GOAL_STORAGE_KEY = 'paint-map-contract-goal';
+const DEFAULT_CONTRACT_GOAL = 5;
 
-const DEFAULT_MONTHLY_GOAL: KpiGoal = {
-  visits: 500,
-  interphone: 130,
-  faceToFace: 50,
-  measurements: 4,
-  appointments: 3,
-  contracts: 1,
-};
+// Calculate KPI targets from contract goal using past data conversion rates
+function calcGoalFromContracts(targetContracts: number): KpiGoal {
+  const t = PAST_TOTALS;
+  // Avoid division by zero with fallback ratios
+  const appoPerContract = t.contracts > 0 ? t.appointments / t.contracts : 3.3;
+  const measurePerAppo = t.appointments > 0 ? t.measurements / t.appointments : 1.3;
+  const facePerMeasure = t.measurements > 0 ? t.faceToFace / t.measurements : 13;
+  const contactPerFace = t.faceToFace > 0 ? t.contacts / t.faceToFace : 2.7;
+  const visitPerContact = t.contacts > 0 ? t.visits / t.contacts : 3.9;
+
+  const appointments = Math.ceil(targetContracts * appoPerContract);
+  const measurements = Math.ceil(appointments * measurePerAppo);
+  const faceToFace = Math.ceil(measurements * facePerMeasure);
+  const interphone = Math.ceil(faceToFace * contactPerFace);
+  const visits = Math.ceil(interphone * visitPerContact);
+
+  return { visits, interphone, faceToFace, measurements, appointments, contracts: targetContracts };
+}
 
 function getDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -125,23 +137,23 @@ function scaleGoal(monthly: KpiGoal, period: Period, range: { start: Date; end: 
 export function VisitPlan({ properties, userPosition, onSelectProperty, onClose }: VisitPlanProps) {
   const [period, setPeriod] = useState<Period>('day');
   const [showGoalEdit, setShowGoalEdit] = useState(false);
-  const [monthlyGoal, setMonthlyGoal] = useState<KpiGoal>(DEFAULT_MONTHLY_GOAL);
+  const [contractGoal, setContractGoal] = useState<number>(DEFAULT_CONTRACT_GOAL);
 
-  // Load saved goal
+  // Load saved contract goal
   useEffect(() => {
     const saved = localStorage.getItem(GOAL_STORAGE_KEY);
     if (saved) {
-      try {
-        const g = JSON.parse(saved);
-        setMonthlyGoal({ ...DEFAULT_MONTHLY_GOAL, ...g });
-      } catch { /* ignore */ }
+      const n = parseInt(saved);
+      if (!isNaN(n) && n > 0) setContractGoal(n);
     }
   }, []);
 
-  const saveGoal = (g: KpiGoal) => {
-    setMonthlyGoal(g);
-    localStorage.setItem(GOAL_STORAGE_KEY, JSON.stringify(g));
+  const saveGoal = (n: number) => {
+    setContractGoal(n);
+    localStorage.setItem(GOAL_STORAGE_KEY, String(n));
   };
+
+  const monthlyGoal = useMemo(() => calcGoalFromContracts(contractGoal), [contractGoal]);
 
   const range = useMemo(() => getDateRange(period), [period]);
   const goal = useMemo(() => scaleGoal(monthlyGoal, period, range), [monthlyGoal, period, range]);
@@ -250,10 +262,10 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
           </div>
 
           {showGoalEdit && (
-            <GoalEditor
-              goal={monthlyGoal}
-              onSave={(g) => {
-                saveGoal(g);
+            <ContractGoalEditor
+              value={contractGoal}
+              onSave={(n) => {
+                saveGoal(n);
                 setShowGoalEdit(false);
               }}
             />
@@ -364,34 +376,35 @@ function KpiRow({ label, current, target, color }: { label: string; current: num
   );
 }
 
-function GoalEditor({ goal, onSave }: { goal: KpiGoal; onSave: (g: KpiGoal) => void }) {
-  const [g, setG] = useState(goal);
-  const fields: Array<{ key: keyof KpiGoal; label: string }> = [
-    { key: 'visits', label: '訪問' },
-    { key: 'interphone', label: 'インターホン' },
-    { key: 'faceToFace', label: '対面' },
-    { key: 'measurements', label: '計測' },
-    { key: 'appointments', label: 'アポ' },
-    { key: 'contracts', label: '成約' },
-  ];
+function ContractGoalEditor({ value, onSave }: { value: number; onSave: (n: number) => void }) {
+  const [n, setN] = useState(String(value));
+  const preview = calcGoalFromContracts(parseInt(n) || 0);
   return (
     <div className="bg-gray-50 rounded-lg p-3 mb-3">
-      <p className="text-xs font-bold text-gray-600 mb-2">月間目標を入力</p>
-      <div className="grid grid-cols-2 gap-2">
-        {fields.map((f) => (
-          <div key={f.key}>
-            <label className="text-[10px] text-gray-500">{f.label}</label>
-            <input
-              type="number"
-              className="w-full border rounded-lg px-2 py-1.5 text-sm"
-              value={g[f.key]}
-              onChange={(e) => setG({ ...g, [f.key]: parseInt(e.target.value) || 0 })}
-            />
-          </div>
-        ))}
+      <p className="text-xs font-bold text-gray-600 mb-2">月間成約目標</p>
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <input
+            type="number"
+            className="w-full border rounded-lg px-3 py-2 text-base"
+            value={n}
+            onChange={(e) => setN(e.target.value)}
+            placeholder="例: 5"
+          />
+        </div>
+        <span className="text-sm text-gray-500 pb-2">件 / 月</span>
+      </div>
+      <p className="text-[10px] text-gray-400 mt-2">過去実績の転換率から自動計算：</p>
+      <div className="grid grid-cols-3 gap-1 mt-1 text-[10px] text-gray-500">
+        <span>訪問: <b>{preview.visits}</b></span>
+        <span>インタ: <b>{preview.interphone}</b></span>
+        <span>対面: <b>{preview.faceToFace}</b></span>
+        <span>計測: <b>{preview.measurements}</b></span>
+        <span>アポ: <b>{preview.appointments}</b></span>
+        <span>成約: <b>{preview.contracts}</b></span>
       </div>
       <button
-        onClick={() => onSave(g)}
+        onClick={() => onSave(parseInt(n) || 1)}
         className="w-full mt-3 py-2 bg-blue-500 text-white rounded-lg text-sm font-bold"
       >
         保存
