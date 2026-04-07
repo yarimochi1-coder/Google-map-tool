@@ -1,18 +1,21 @@
 import { useState, useRef } from 'react';
-import type { Property } from '../types';
+import type { Property, LayerPin, MarkerLayer } from '../types';
 import { parseKML, parseCSV, parseDailyStatsCSV, type DailyStat } from '../lib/importParser';
 import { gasPost } from '../lib/gasClient';
 
 interface ImportModalProps {
   onImport: (properties: Property[]) => void;
+  onImportLayer: (pins: LayerPin[]) => void;
   onClose: () => void;
 }
 
-type Tab = 'pins' | 'stats';
+type Tab = 'pins' | 'layer' | 'stats';
 
-export function ImportModal({ onImport, onClose }: ImportModalProps) {
+export function ImportModal({ onImport, onImportLayer, onClose }: ImportModalProps) {
   const [tab, setTab] = useState<Tab>('pins');
   const [parsed, setParsed] = useState<Property[]>([]);
+  const [parsedLayer, setParsedLayer] = useState<{ lat: number; lng: number; name: string; address: string }[]>([]);
+  const [layerType, setLayerType] = useState<MarkerLayer>('our_work');
   const [parsedStats, setParsedStats] = useState<DailyStat[]>([]);
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
@@ -23,6 +26,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
   const reset = () => {
     setParsed([]);
     setParsedStats([]);
+    setParsedLayer([]);
     setFileName('');
     setError('');
     setImportResult('');
@@ -54,6 +58,21 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
             return;
           }
           setParsed(result);
+        } else if (tab === 'layer') {
+          let result: Property[];
+          if (file.name.endsWith('.kml')) {
+            result = parseKML(text);
+          } else if (file.name.endsWith('.csv')) {
+            result = parseCSV(text);
+          } else {
+            setError('KMLまたはCSVファイルを選択してください');
+            return;
+          }
+          if (result.length === 0) {
+            setError('データが見つかりませんでした');
+            return;
+          }
+          setParsedLayer(result.map((p) => ({ lat: p.lat, lng: p.lng, name: p.name, address: p.address })));
         } else {
           const stats = parseDailyStatsCSV(text);
           if (stats.length === 0) {
@@ -118,12 +137,20 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
             ピン（KML/CSV）
           </button>
           <button
+            onClick={() => { setTab('layer'); reset(); }}
+            className={`flex-1 py-2 rounded-lg text-sm font-bold ${
+              tab === 'layer' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            施工/ターゲット
+          </button>
+          <button
             onClick={() => { setTab('stats'); reset(); }}
             className={`flex-1 py-2 rounded-lg text-sm font-bold ${
               tab === 'stats' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
             }`}
           >
-            過去の数値データ
+            過去数値
           </button>
         </div>
 
@@ -133,7 +160,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
             <input
               ref={fileRef}
               type="file"
-              accept={tab === 'pins' ? '.kml,.csv' : '.csv'}
+              accept={tab === 'stats' ? '.csv' : '.kml,.csv'}
               onChange={handleFile}
               className="hidden"
             />
@@ -141,7 +168,7 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
               onClick={() => fileRef.current?.click()}
               className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 text-sm active:bg-gray-50"
             >
-              {fileName || (tab === 'pins' ? 'KML / CSVファイルを選択' : '数値管理CSVを選択')}
+              {fileName || (tab === 'stats' ? '数値管理CSVを選択' : 'KML / CSVファイルを選択')}
             </button>
             {tab === 'stats' && (
               <p className="text-[10px] text-gray-400 mt-1">
@@ -182,6 +209,69 @@ export function ImportModal({ onImport, onClose }: ImportModalProps) {
                 className="w-full py-4 bg-blue-500 text-white rounded-xl font-bold text-sm active:bg-blue-600"
               >
                 {parsed.length}件をインポート
+              </button>
+            </>
+          )}
+
+          {/* Layer preview */}
+          {tab === 'layer' && (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setLayerType('our_work')}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold ${layerType === 'our_work' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+              >
+                🏠 自社施工
+              </button>
+              <button
+                onClick={() => setLayerType('target')}
+                className={`flex-1 py-2 rounded-lg text-sm font-bold ${layerType === 'target' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+              >
+                🎯 ターゲット
+              </button>
+            </div>
+          )}
+
+          {tab === 'layer' && parsedLayer.length > 0 && (
+            <>
+              <p className="text-sm text-gray-600">{parsedLayer.length}件が見つかりました</p>
+              <div className="max-h-48 overflow-y-auto border rounded-lg">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 text-left">名前</th>
+                      <th className="px-2 py-1 text-left">緯度</th>
+                      <th className="px-2 py-1 text-left">経度</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedLayer.slice(0, 50).map((p, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1 truncate max-w-[120px]">{p.name || '—'}</td>
+                        <td className="px-2 py-1">{p.lat.toFixed(4)}</td>
+                        <td className="px-2 py-1">{p.lng.toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button
+                onClick={() => {
+                  const layerPinsToImport: LayerPin[] = parsedLayer.map((p) => ({
+                    id: crypto.randomUUID(),
+                    lat: p.lat,
+                    lng: p.lng,
+                    name: p.name,
+                    address: p.address,
+                    memo: '',
+                    layer: layerType,
+                    created_at: new Date().toISOString(),
+                  }));
+                  onImportLayer(layerPinsToImport);
+                  onClose();
+                }}
+                className={`w-full py-4 text-white rounded-xl font-bold text-sm ${layerType === 'our_work' ? 'bg-green-500 active:bg-green-600' : 'bg-orange-500 active:bg-orange-600'}`}
+              >
+                {parsedLayer.length}件を{layerType === 'our_work' ? '自社施工' : 'ターゲット'}としてインポート
               </button>
             </>
           )}

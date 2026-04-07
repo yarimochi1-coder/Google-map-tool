@@ -11,6 +11,7 @@ import { Analytics } from './components/Analytics';
 import { VisitPlan } from './components/VisitPlan';
 import { useUserName } from './hooks/useUserName';
 import { useGeolocation } from './hooks/useGeolocation';
+import { useLayerPins } from './hooks/useLayerPins';
 
 type View = 'map' | 'dashboard' | 'analytics' | 'plan';
 
@@ -22,6 +23,7 @@ export default function App() {
   const isOnline = useOnlineStatus();
   const { userName, setUserName } = useUserName();
   const { position: userPosition } = useGeolocation();
+  const { pins: layerPins, importPins: importLayerPins } = useLayerPins();
 
   const {
     properties,
@@ -87,6 +89,7 @@ export default function App() {
         {view === 'map' ? (
           <MapView
             properties={properties}
+            layerPins={layerPins}
             isOnline={isOnline}
             isSyncing={isSyncing}
             pendingCount={pendingCount}
@@ -143,6 +146,7 @@ export default function App() {
       {showImport && (
         <ImportModal
           onImport={importProperties}
+          onImportLayer={importLayerPins}
           onClose={() => setShowImport(false)}
         />
       )}

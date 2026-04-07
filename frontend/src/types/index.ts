@@ -45,6 +45,19 @@ export interface Property {
   revisit: string; // '' or ISO date when flagged for revisit
 }
 
+export type MarkerLayer = 'visit' | 'our_work' | 'target';
+
+export interface LayerPin {
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+  address: string;
+  memo: string;
+  layer: MarkerLayer;
+  created_at: string;
+}
+
 export interface MonthlyGoal {
   month: string; // YYYY-MM
   targetContracts: number;

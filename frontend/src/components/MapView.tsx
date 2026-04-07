@@ -6,9 +6,14 @@ import {
   useMap,
 } from '@vis.gl/react-google-maps';
 import Supercluster from 'supercluster';
-import type { Property } from '../types';
+import type { Property, LayerPin } from '../types';
 import { ClusterMarker } from './ClusterMarker';
 import { getStatusConfig } from '../lib/statusConfig';
+
+const LAYER_STYLES = {
+  our_work: { bg: '#4CAF50', icon: '🏠', label: '自社施工' },
+  target: { bg: '#FF5722', icon: '🎯', label: 'ターゲット' },
+} as const;
 import { SearchBar } from './SearchBar';
 import { SyncIndicator } from './SyncIndicator';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -22,6 +27,7 @@ const CLUSTER_MAX_ZOOM = 17;
 
 interface MapViewProps {
   properties: Property[];
+  layerPins: LayerPin[];
   isOnline: boolean;
   isSyncing: boolean;
   pendingCount: number;
@@ -31,6 +37,7 @@ interface MapViewProps {
 
 function MapContent({
   properties,
+  layerPins,
   isOnline,
   isSyncing,
   pendingCount,
@@ -40,6 +47,15 @@ function MapContent({
   const map = useMap();
   const { position: userPosition } = useGeolocation();
   const { heading, start: startCompass, stop: stopCompass } = useDeviceHeading();
+
+  // Layer visibility
+  const [showVisit, setShowVisit] = useState(true);
+  const [showOurWork, setShowOurWork] = useState(true);
+  const [showTarget, setShowTarget] = useState(true);
+  const [showLayerPanel, setShowLayerPanel] = useState(false);
+
+  const ourWorkPins = layerPins.filter((p) => p.layer === 'our_work');
+  const targetPins = layerPins.filter((p) => p.layer === 'target');
 
   // Compass/heading mode: rotate map to match device direction
   const [headingMode, setHeadingMode] = useState(false);
@@ -351,7 +367,7 @@ function MapContent({
         style={{ width: '100%', height: '100%' }}
       >
         {/* Cluster markers */}
-        {markers.clusters.map((c) => (
+        {showVisit && markers.clusters.map((c) => (
           <AdvancedMarker
             key={`cluster-${c.id}`}
             position={{ lat: c.lat, lng: c.lng }}
@@ -364,8 +380,8 @@ function MapContent({
           </AdvancedMarker>
         ))}
 
-        {/* Individual markers - Google Maps native pin + name label */}
-        {markers.singles.map((p) => {
+        {/* Individual visit markers */}
+        {showVisit && markers.singles.map((p) => {
           const cfg = getStatusConfig(p.status);
           return (
             <AdvancedMarker
@@ -400,6 +416,50 @@ function MapContent({
           );
         })}
 
+        {/* Our work pins (green) */}
+        {showOurWork && ourWorkPins.map((p) => (
+          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: '50% 50% 50% 0',
+                backgroundColor: LAYER_STYLES.our_work.bg, border: '2px solid #fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 12, transform: 'rotate(-45deg)',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+              }}>
+                <span style={{ transform: 'rotate(45deg)' }}>{LAYER_STYLES.our_work.icon}</span>
+              </div>
+              {p.name && (
+                <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: '0 4px', borderRadius: 3, marginTop: 2, color: '#333', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+                  {p.name}
+                </span>
+              )}
+            </div>
+          </AdvancedMarker>
+        ))}
+
+        {/* Target pins (orange) */}
+        {showTarget && targetPins.map((p) => (
+          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: '50% 50% 50% 0',
+                backgroundColor: LAYER_STYLES.target.bg, border: '2px solid #fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: 12, transform: 'rotate(-45deg)',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+              }}>
+                <span style={{ transform: 'rotate(45deg)' }}>{LAYER_STYLES.target.icon}</span>
+              </div>
+              {p.name && (
+                <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: '0 4px', borderRadius: 3, marginTop: 2, color: '#333', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+                  {p.name}
+                </span>
+              )}
+            </div>
+          </AdvancedMarker>
+        ))}
+
         {/* GPS blue dot with direction */}
         {userPosition && (
           <AdvancedMarker position={userPosition}>
@@ -419,6 +479,36 @@ function MapContent({
           </AdvancedMarker>
         )}
       </Map>
+
+      {/* Layer toggle button */}
+      <button
+        onClick={() => setShowLayerPanel(!showLayerPanel)}
+        className="absolute bottom-20 right-3 z-40 w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center active:scale-95"
+        title="レイヤー"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="#666">
+          <path d="M11.99 18.54l-7.37-5.73L3 14.07l9 7 9-7-1.63-1.27-7.38 5.74zM12 16l7.36-5.73L21 9l-9-7-9 7 1.63 1.27L12 16z" />
+        </svg>
+      </button>
+
+      {/* Layer panel */}
+      {showLayerPanel && (
+        <div className="absolute bottom-34 right-3 z-40 bg-white rounded-xl shadow-lg p-3 w-48">
+          <p className="text-xs font-bold text-gray-500 mb-2">レイヤー表示</p>
+          <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+            <input type="checkbox" checked={showVisit} onChange={(e) => setShowVisit(e.target.checked)} className="w-4 h-4 accent-blue-500" />
+            <span className="text-sm font-bold" style={{ color: '#2196F3' }}>訪問ピン</span>
+          </label>
+          <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+            <input type="checkbox" checked={showOurWork} onChange={(e) => setShowOurWork(e.target.checked)} className="w-4 h-4 accent-green-500" />
+            <span className="text-sm font-bold" style={{ color: '#4CAF50' }}>🏠 自社施工</span>
+          </label>
+          <label className="flex items-center gap-2 py-1.5 cursor-pointer">
+            <input type="checkbox" checked={showTarget} onChange={(e) => setShowTarget(e.target.checked)} className="w-4 h-4 accent-orange-500" />
+            <span className="text-sm font-bold" style={{ color: '#FF5722' }}>🎯 ターゲット</span>
+          </label>
+        </div>
+      )}
 
       {/* Center on user / follow / compass button */}
       <button
