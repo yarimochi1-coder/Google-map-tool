@@ -33,6 +33,8 @@ interface MapViewProps {
   pendingCount: number;
   onSelectProperty: (property: Property) => void;
   onAddPin: (lat: number, lng: number, address: string) => void;
+  onAddLayerPin: (lat: number, lng: number, layer: 'our_work' | 'target') => void;
+  onSelectLayerPin: (pin: LayerPin) => void;
 }
 
 function MapContent({
@@ -43,6 +45,8 @@ function MapContent({
   pendingCount,
   onSelectProperty,
   onAddPin,
+  onAddLayerPin,
+  onSelectLayerPin,
 }: MapViewProps) {
   const map = useMap();
   const { position: userPosition } = useGeolocation();
@@ -53,6 +57,8 @@ function MapContent({
   const [showOurWork, setShowOurWork] = useState(true);
   const [showTarget, setShowTarget] = useState(true);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
+  // Add mode: which type of pin to add on long press
+  const [addMode, setAddMode] = useState<'visit' | 'our_work' | 'target'>('visit');
 
   const ourWorkPins = layerPins.filter((p) => p.layer === 'our_work');
   const targetPins = layerPins.filter((p) => p.layer === 'target');
@@ -253,6 +259,16 @@ function MapContent({
   // Long press: use map CENTER coordinates (100% accurate, no screen conversion needed)
   const onAddPinRef = useRef(onAddPin);
   onAddPinRef.current = onAddPin;
+  const onAddLayerPinRef = useRef(onAddLayerPin);
+  onAddLayerPinRef.current = onAddLayerPin;
+  const addModeRef = useRef(addMode);
+  addModeRef.current = addMode;
+
+  const dispatchAdd = useCallback((lat: number, lng: number) => {
+    const mode = addModeRef.current;
+    if (mode === 'visit') onAddPinRef.current(lat, lng, '');
+    else onAddLayerPinRef.current(lat, lng, mode);
+  }, []);
 
   useEffect(() => {
     if (!map) return;
@@ -268,7 +284,7 @@ function MapContent({
     const addPinAtCenter = () => {
       const center = map.getCenter();
       if (center) {
-        onAddPinRef.current(center.lat(), center.lng(), '');
+        dispatchAdd(center.lat(), center.lng());
       }
     };
 
@@ -295,9 +311,8 @@ function MapContent({
       if (e.button !== 0) return;
       startPos = { x: e.clientX, y: e.clientY };
       timer = setTimeout(() => {
-        // PC: use lastMapLatLng from mousemove (accurate), fallback to center
         if (lastMapLatLng.current) {
-          onAddPinRef.current(lastMapLatLng.current.lat, lastMapLatLng.current.lng, '');
+          dispatchAdd(lastMapLatLng.current.lat, lastMapLatLng.current.lng);
         } else {
           addPinAtCenter();
         }
@@ -330,7 +345,7 @@ function MapContent({
       mapDiv.removeEventListener('mouseup', onMouseUp);
       mapDiv.removeEventListener('mousemove', onMouseMoveNative);
     };
-  }, [map]);
+  }, [map, dispatchAdd]);
 
   const handlePlaceSelect = useCallback(
     (location: { lat: number; lng: number; address: string }) => {
@@ -418,7 +433,7 @@ function MapContent({
 
         {/* Our work pins (green) */}
         {showOurWork && ourWorkPins.map((p) => (
-          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name}>
+          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name} onClick={() => onSelectLayerPin(p)}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50% 50% 50% 0',
@@ -440,7 +455,7 @@ function MapContent({
 
         {/* Target pins (orange) */}
         {showTarget && targetPins.map((p) => (
-          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name}>
+          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name} onClick={() => onSelectLayerPin(p)}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50% 50% 50% 0',
@@ -493,7 +508,7 @@ function MapContent({
 
       {/* Layer panel */}
       {showLayerPanel && (
-        <div className="absolute bottom-34 right-3 z-40 bg-white rounded-xl shadow-lg p-3 w-48">
+        <div className="absolute bottom-34 right-3 z-40 bg-white rounded-xl shadow-lg p-3 w-56">
           <p className="text-xs font-bold text-gray-500 mb-2">レイヤー表示</p>
           <label className="flex items-center gap-2 py-1.5 cursor-pointer">
             <input type="checkbox" checked={showVisit} onChange={(e) => setShowVisit(e.target.checked)} className="w-4 h-4 accent-blue-500" />
@@ -507,6 +522,39 @@ function MapContent({
             <input type="checkbox" checked={showTarget} onChange={(e) => setShowTarget(e.target.checked)} className="w-4 h-4 accent-orange-500" />
             <span className="text-sm font-bold" style={{ color: '#FF5722' }}>🎯 ターゲット</span>
           </label>
+
+          <div className="border-t mt-2 pt-2">
+            <p className="text-xs font-bold text-gray-500 mb-1.5">長押しで追加</p>
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                onClick={() => setAddMode('visit')}
+                className={`py-1.5 rounded-lg text-[10px] font-bold ${addMode === 'visit' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+              >
+                訪問
+              </button>
+              <button
+                onClick={() => setAddMode('our_work')}
+                className={`py-1.5 rounded-lg text-[10px] font-bold ${addMode === 'our_work' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+              >
+                🏠施工
+              </button>
+              <button
+                onClick={() => setAddMode('target')}
+                className={`py-1.5 rounded-lg text-[10px] font-bold ${addMode === 'target' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}
+              >
+                🎯標的
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Active add mode badge */}
+      {addMode !== 'visit' && (
+        <div className="absolute top-16 left-3 z-40">
+          <div className={`px-3 py-1.5 rounded-full text-xs font-bold text-white shadow-lg ${addMode === 'our_work' ? 'bg-green-500' : 'bg-orange-500'}`}>
+            {addMode === 'our_work' ? '🏠 自社施工モード' : '🎯 ターゲットモード'}
+          </div>
         </div>
       )}
 

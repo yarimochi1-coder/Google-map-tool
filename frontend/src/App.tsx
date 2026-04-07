@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { Property, PropertyStatus } from './types';
+import type { Property, PropertyStatus, LayerPin, MarkerLayer } from './types';
 import { MapView } from './components/MapView';
 import { PropertyDetail } from './components/PropertyDetail';
 import { Dashboard } from './components/Dashboard';
@@ -12,6 +12,7 @@ import { VisitPlan } from './components/VisitPlan';
 import { useUserName } from './hooks/useUserName';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useLayerPins } from './hooks/useLayerPins';
+import { LayerPinDetail } from './components/LayerPinDetail';
 
 type View = 'map' | 'dashboard' | 'analytics' | 'plan';
 
@@ -23,7 +24,12 @@ export default function App() {
   const isOnline = useOnlineStatus();
   const { userName, setUserName } = useUserName();
   const { position: userPosition } = useGeolocation();
-  const { pins: layerPins, importPins: importLayerPins } = useLayerPins();
+  const { pins: layerPins, addPin: addLayerPin, removePin: removeLayerPin, updatePin: updateLayerPin, importPins: importLayerPins } = useLayerPins();
+  const [selectedLayerPin, setSelectedLayerPin] = useState<LayerPin | null>(null);
+
+  const handleAddLayerPin = useCallback((lat: number, lng: number, layer: MarkerLayer) => {
+    addLayerPin({ lat, lng, name: '', address: '', memo: '', layer });
+  }, [addLayerPin]);
 
   const {
     properties,
@@ -95,6 +101,8 @@ export default function App() {
             pendingCount={pendingCount}
             onSelectProperty={handleSelectProperty}
             onAddPin={handleLongPress}
+            onAddLayerPin={handleAddLayerPin}
+            onSelectLayerPin={setSelectedLayerPin}
           />
         ) : view === 'dashboard' ? (
           <Dashboard
@@ -116,8 +124,18 @@ export default function App() {
         )}
       </div>
 
+      {/* Layer pin detail */}
+      {selectedLayerPin && view === 'map' && (
+        <LayerPinDetail
+          pin={selectedLayerPin}
+          onUpdate={updateLayerPin}
+          onDelete={(id) => { removeLayerPin(id); setSelectedLayerPin(null); }}
+          onClose={() => setSelectedLayerPin(null)}
+        />
+      )}
+
       {/* Property detail panel */}
-      {currentSelected && view === 'map' && !newPinLocation && (
+      {currentSelected && view === 'map' && !newPinLocation && !selectedLayerPin && (
         <PropertyDetail
           property={currentSelected}
           onUpdateStatus={updateStatus}
@@ -152,7 +170,7 @@ export default function App() {
       )}
 
       {/* Bottom navigation - always visible */}
-      {!currentSelected && !newPinLocation && !showImport && (
+      {!currentSelected && !newPinLocation && !showImport && !selectedLayerPin && (
         <div className="bg-white border-t border-gray-200 flex safe-bottom z-50 relative">
           <button
             onClick={() => setView('map')}

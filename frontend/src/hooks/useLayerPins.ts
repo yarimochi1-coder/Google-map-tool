@@ -37,6 +37,10 @@ export function useLayerPins() {
     setPins((prev) => prev.filter((p) => p.id !== id));
   }, []);
 
+  const updatePin = useCallback((id: string, changes: Partial<LayerPin>) => {
+    setPins((prev) => prev.map((p) => (p.id === id ? { ...p, ...changes } : p)));
+  }, []);
+
   const importPins = useCallback((newPins: LayerPin[]) => {
     setPins((prev) => [...prev, ...newPins]);
   }, []);
@@ -45,5 +49,5 @@ export function useLayerPins() {
     return pins.filter((p) => p.layer === layer);
   }, [pins]);
 
-  return { pins, addPin, removePin, importPins, getPinsByLayer };
+  return { pins, addPin, removePin, updatePin, importPins, getPinsByLayer };
 }
