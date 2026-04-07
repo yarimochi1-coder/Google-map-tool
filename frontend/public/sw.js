@@ -1,4 +1,4 @@
-const CACHE_NAME = 'paint-map-v1';
+const CACHE_NAME = 'paint-map-v3';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -55,17 +55,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets - cache first, fallback to network
+  // App shell (HTML/JS/CSS) - network first, fallback to cache
+  // Critical: HTML and JS bundles must be fresh to get app updates
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      });
-    })
+    fetch(request).then((response) => {
+      if (response.ok) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+      }
+      return response;
+    }).catch(() => caches.match(request))
   );
 });
