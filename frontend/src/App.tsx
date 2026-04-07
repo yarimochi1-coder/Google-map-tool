@@ -41,6 +41,7 @@ export default function App() {
     isSyncing,
     pendingCount,
     removeProperty,
+    clearAllLocal,
   } = useProperties();
 
   // Long press opens the new pin modal instead of immediately adding
@@ -113,6 +114,10 @@ export default function App() {
           <Analytics
             properties={properties}
             onClose={() => setView('map')}
+            onClearAll={async () => {
+              await clearAllLocal();
+              location.reload();
+            }}
           />
         ) : (
           <VisitPlan

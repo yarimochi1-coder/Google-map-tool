@@ -153,6 +153,20 @@ export function useProperties() {
     [properties, updateProperty, logVisit]
   );
 
+  const clearAllLocal = useCallback(async () => {
+    setProperties([]);
+    setPendingCount(0);
+    // Delete IndexedDB
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase('paint-map-app');
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+      req.onblocked = () => resolve();
+    });
+    // Also clear localStorage layer pins
+    localStorage.removeItem('paint-map-layer-pins');
+  }, []);
+
   const removeProperty = useCallback(
     async (id: string) => {
       setProperties((prev) => prev.filter((p) => p.id !== id));
@@ -187,6 +201,7 @@ export function useProperties() {
     incrementVisit,
     removeProperty,
     importProperties,
+    clearAllLocal,
     isSyncing,
     pendingCount,
     lastSyncTime,
