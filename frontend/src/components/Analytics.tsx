@@ -10,8 +10,8 @@ interface AnalyticsProps {
 
 export function Analytics({ properties, onClose }: AnalyticsProps) {
   const stats = useMemo(() => {
-    // Exclude '施工済み' from visit-related stats
-    const visitProps = properties.filter((p) => p.status !== 'completed');
+    // Exclude '施工済み' and '成約' from visit-related stats
+    const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
     const total = visitProps.length;
     if (properties.length === 0) return null;
 

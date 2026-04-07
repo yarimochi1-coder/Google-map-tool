@@ -73,8 +73,8 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
   const range = useMemo(() => getDateRange(baseDate, period), [baseDate, period]);
 
   const stats = useMemo(() => {
-    // Exclude '施工済み' from visit counts
-    const visitProps = properties.filter((p) => p.status !== 'completed');
+    // Exclude '施工済み' and '成約' from visit counts
+    const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
     const periodVisits = visitProps.filter((p) =>
       isDateInRange(p.last_visit_date, range.start, range.end)
     );
@@ -100,11 +100,15 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
     const staffBreakdown = Object.entries(staffMap)
       .sort((a, b) => b[1] - a[1]);
 
+    // 成約とアポはperiod内で別途集計（visitPropsには含まれていない）
+    const periodAppos = properties.filter((p) => p.status === 'appointment' && isDateInRange(p.last_visit_date, range.start, range.end)).length;
+    const periodContracts = properties.filter((p) => p.status === 'contract' && isDateInRange(p.last_visit_date, range.start, range.end)).length;
+
     return {
       periodVisits: periodVisits.length,
       periodCreated: periodCreated.length,
-      appointments: periodVisits.filter((p) => p.status === 'appointment').length,
-      contracts: periodVisits.filter((p) => p.status === 'contract').length,
+      appointments: periodAppos,
+      contracts: periodContracts,
       statusCounts,
       totalPins,
       maxCount,

@@ -167,8 +167,8 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
   const goal = useMemo(() => scaleGoal(monthlyGoal, period, range), [monthlyGoal, period, range]);
 
   const stats = useMemo(() => {
-    // Exclude '施工済み' from visit counts (it's just historical data)
-    const visitProps = properties.filter((p) => p.status !== 'completed');
+    // Exclude '施工済み' and '成約' from visit counts
+    const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
 
     // Filter properties whose last_visit_date falls in range
     const inRange = visitProps.filter((p) => {
@@ -183,7 +183,12 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     const faceToFace = inRange.filter((p) => p.status !== 'absent' && p.status !== 'interphone').length;
     const measurements = inRange.filter((p) => p.status === 'measured').length;
     const appointments = inRange.filter((p) => p.status === 'appointment').length;
-    const contracts = inRange.filter((p) => p.status === 'contract').length;
+    // 成約はvisitPropsに含まれていないので別途集計
+    const contracts = properties.filter((p) => {
+      if (p.status !== 'contract') return false;
+      const d = parseDate(p.last_visit_date);
+      return d && d >= range.start && d <= range.end;
+    }).length;
 
     const remaining = getRemainingWorkdays(range.end);
     const perDay = period === 'day' ? 1 : remaining;
