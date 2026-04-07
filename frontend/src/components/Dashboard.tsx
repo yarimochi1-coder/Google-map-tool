@@ -56,10 +56,11 @@ function navigateDate(baseDate: string, period: Period, direction: number): stri
 
 function isDateInRange(dateStr: string, start: string, end: string): boolean {
   if (!dateStr) return false;
-  // Handle both "2026/4/5 18:30:00" and "2026-04-05" formats
-  const normalized = dateStr.split(' ')[0].replace(/\//g, '-');
-  const parts = normalized.split('-');
-  const padded = parts.map(p => p.padStart(2, '0')).join('-');
+  // Handle "2026/4/7 18:30:00", "2026-4-7", "2026-04-07" etc.
+  const datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
+  const m = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!m) return false;
+  const padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
   return padded >= start && padded <= end;
 }
 
@@ -72,10 +73,12 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
   const range = useMemo(() => getDateRange(baseDate, period), [baseDate, period]);
 
   const stats = useMemo(() => {
-    const periodVisits = properties.filter((p) =>
+    // Exclude '施工済み' from visit counts
+    const visitProps = properties.filter((p) => p.status !== 'completed');
+    const periodVisits = visitProps.filter((p) =>
       isDateInRange(p.last_visit_date, range.start, range.end)
     );
-    const periodCreated = properties.filter((p) =>
+    const periodCreated = visitProps.filter((p) =>
       isDateInRange(p.created_at, range.start, range.end)
     );
 
