@@ -4,6 +4,8 @@ var HEADERS = ['id','lat','lng','address','name','status','building_age','deteri
 var HISTORY_HEADERS = ['id','property_id','status','staff','visited_at','memo'];
 var DAILY_STATS_NAME = 'daily_stats';
 var DAILY_STATS_HEADERS = ['date','visits','contacts','face_to_face','measurements','appointments','contracts','notes'];
+var LAYER_PINS_NAME = 'layer_pins';
+var LAYER_PINS_HEADERS = ['id','lat','lng','name','address','memo','layer','created_at'];
 
 function doGet(e) {
   try {
@@ -24,6 +26,8 @@ function doGet(e) {
         return jsonResponse({ success: true, data: getAnalytics() });
       case 'daily_stats':
         return jsonResponse({ success: true, data: getDailyStats() });
+      case 'layer_pins':
+        return jsonResponse({ success: true, data: getLayerPins() });
       default:
         return jsonResponse({ success: false, error: 'Unknown action: ' + action });
     }
@@ -58,6 +62,15 @@ function doPost(e) {
           return jsonResponse({ success: true, data: logVisit(body.data) });
         case 'import_daily_stats':
           return jsonResponse({ success: true, data: importDailyStats(body.data) });
+        case 'create_layer_pin':
+          return jsonResponse({ success: true, data: createLayerPin(body.data) });
+        case 'delete_layer_pin':
+          deleteLayerPin(body.data.id || body.id);
+          return jsonResponse({ success: true });
+        case 'import_layer_pins':
+          return jsonResponse({ success: true, data: importLayerPins(body.data) });
+        case 'update_layer_pin':
+          return jsonResponse({ success: true, data: updateLayerPin(body.data) });
         default:
           return jsonResponse({ success: false, error: 'Unknown action: ' + action });
       }
@@ -123,6 +136,99 @@ function getDailyStats() {
     results.push(obj);
   }
   return results;
+}
+
+function getLayerPinsSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(LAYER_PINS_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(LAYER_PINS_NAME);
+    sheet.getRange(1, 1, 1, LAYER_PINS_HEADERS.length).setValues([LAYER_PINS_HEADERS]);
+  }
+  return sheet;
+}
+
+function getLayerPins() {
+  var sheet = getLayerPinsSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  var headers = data[0];
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      obj[headers[j]] = data[i][j];
+    }
+    obj.lat = Number(obj.lat);
+    obj.lng = Number(obj.lng);
+    results.push(obj);
+  }
+  return results;
+}
+
+function createLayerPin(data) {
+  var sheet = getLayerPinsSheet();
+  var id = data.id || Utilities.getUuid();
+  var now = new Date().toISOString();
+  var row = LAYER_PINS_HEADERS.map(function(h) {
+    if (h === 'id') return id;
+    if (h === 'created_at') return data.created_at || now;
+    return data[h] || '';
+  });
+  sheet.appendRow(row);
+  data.id = id;
+  return data;
+}
+
+function deleteLayerPin(id) {
+  var sheet = getLayerPinsSheet();
+  var allData = sheet.getDataRange().getValues();
+  var idCol = allData[0].indexOf('id');
+  for (var i = 1; i < allData.length; i++) {
+    if (allData[i][idCol] === id) {
+      sheet.deleteRow(i + 1);
+      return;
+    }
+  }
+}
+
+function updateLayerPin(data) {
+  var sheet = getLayerPinsSheet();
+  var allData = sheet.getDataRange().getValues();
+  var headers = allData[0];
+  var idCol = headers.indexOf('id');
+  for (var i = 1; i < allData.length; i++) {
+    if (allData[i][idCol] === data.id) {
+      for (var j = 0; j < headers.length; j++) {
+        var key = headers[j];
+        if (key !== 'id' && key !== 'created_at' && data[key] !== undefined) {
+          sheet.getRange(i + 1, j + 1).setValue(data[key]);
+        }
+      }
+      return data;
+    }
+  }
+  return createLayerPin(data);
+}
+
+function importLayerPins(dataArray) {
+  var sheet = getLayerPinsSheet();
+  var rows = [];
+  var now = new Date().toISOString();
+  for (var i = 0; i < dataArray.length; i++) {
+    var d = dataArray[i];
+    var row = LAYER_PINS_HEADERS.map(function(h) {
+      if (h === 'id') return d.id || Utilities.getUuid();
+      if (h === 'created_at') return d.created_at || now;
+      return d[h] || '';
+    });
+    rows.push(row);
+  }
+  if (rows.length > 0) {
+    var lastRow = sheet.getLastRow();
+    sheet.getRange(lastRow + 1, 1, rows.length, LAYER_PINS_HEADERS.length).setValues(rows);
+  }
+  return { imported: rows.length };
 }
 
 function importDailyStats(dataArray) {
