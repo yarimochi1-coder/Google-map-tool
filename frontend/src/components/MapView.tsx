@@ -373,10 +373,11 @@ function MapContent({
         mapId={MAP_ID}
         defaultCenter={userPosition ?? { lat: 35.68, lng: 139.76 }}
         defaultZoom={15}
-        mapTypeId="satellite"
+        mapTypeId="hybrid"
         gestureHandling="greedy"
         disableDefaultUI={true}
         zoomControl={true}
+        clickableIcons={true}
         onBoundsChanged={handleBoundsChanged}
         onIdle={handleIdle}
         style={{ width: '100%', height: '100%' }}
