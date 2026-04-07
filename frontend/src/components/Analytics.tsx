@@ -6,10 +6,9 @@ import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastDa
 interface AnalyticsProps {
   properties: Property[];
   onClose: () => void;
-  onClearAll?: () => void;
 }
 
-export function Analytics({ properties, onClose, onClearAll }: AnalyticsProps) {
+export function Analytics({ properties, onClose }: AnalyticsProps) {
   const stats = useMemo(() => {
     const total = properties.length;
     if (total === 0) return null;
@@ -283,24 +282,6 @@ export function Analytics({ properties, onClose, onClearAll }: AnalyticsProps) {
 
       {/* Past Data Trends */}
       <PastDataSection dailyStats={PAST_DAILY_STATS} />
-
-      {/* Danger zone */}
-      {onClearAll && (
-        <div className="px-4 pb-4">
-          <h2 className="text-sm font-bold text-gray-700 mb-2">データ管理</h2>
-          <button
-            onClick={() => {
-              if (confirm('このデバイスの訪問ピン・レイヤーピンのキャッシュを全部消します。スプレッドシートのデータは消えません。よろしいですか？')) {
-                onClearAll();
-              }
-            }}
-            className="w-full py-3 text-red-500 text-sm font-bold rounded-xl border border-red-200 active:bg-red-50"
-          >
-            このデバイスのキャッシュを全クリア
-          </button>
-          <p className="text-[10px] text-gray-400 mt-1">※ スプレッドシート上のデータは消えません。リロード後にスプレッドシートから再取得されます。</p>
-        </div>
-      )}
 
       <div className="h-8" />
     </div>
