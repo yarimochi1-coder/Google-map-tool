@@ -10,10 +10,12 @@ interface AnalyticsProps {
 
 export function Analytics({ properties, onClose }: AnalyticsProps) {
   const stats = useMemo(() => {
-    const total = properties.length;
-    if (total === 0) return null;
+    // Exclude '施工済み' from visit-related stats
+    const visitProps = properties.filter((p) => p.status !== 'completed');
+    const total = visitProps.length;
+    if (properties.length === 0) return null;
 
-    // Status counts
+    // Status counts (all statuses including completed)
     const sc: Record<string, number> = {};
     STATUS_LIST.forEach((s) => { sc[s.key] = 0; });
     properties.forEach((p) => { sc[p.status] = (sc[p.status] || 0) + 1; });
@@ -23,13 +25,12 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     const measured = sc['measured'] || 0;
     const appointment = sc['appointment'] || 0;
     const contract = sc['contract'] || 0;
-    const completed = sc['completed'] || 0;
-    const successTotal = contract + completed;
+    const successTotal = contract;
 
     // Funnel
     const funnel = [
       { label: '総訪問', value: total, rate: 100 },
-      { label: '在宅（対面）', value: contacted, rate: Math.round(contacted / total * 100) },
+      { label: '在宅（対面）', value: contacted, rate: total > 0 ? Math.round(contacted / total * 100) : 0 },
       { label: '計測済み', value: measured, rate: contacted > 0 ? Math.round(measured / contacted * 100) : 0 },
       { label: 'アポ獲得', value: appointment, rate: measured > 0 ? Math.round(appointment / measured * 100) : 0 },
       { label: '成約', value: successTotal, rate: appointment > 0 ? Math.round(successTotal / appointment * 100) : 0 },
@@ -40,14 +41,14 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     const hourly: Record<number, { total: number; contacted: number; appo: number }> = {};
     for (let h = 7; h <= 21; h++) hourly[h] = { total: 0, contacted: 0, appo: 0 };
 
-    properties.forEach((p) => {
+    visitProps.forEach((p) => {
       const match = (p.last_visit_date || '').match(/(\d{1,2}):/);
       if (match) {
         const h = parseInt(match[1]);
         if (hourly[h]) {
           hourly[h].total++;
           if (p.status !== 'absent') hourly[h].contacted++;
-          if (p.status === 'appointment' || p.status === 'contract' || p.status === 'completed') hourly[h].appo++;
+          if (p.status === 'appointment' || p.status === 'contract') hourly[h].appo++;
         }
       }
     });
@@ -83,8 +84,8 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     });
     const roofList = Object.entries(roofTypes).sort((a, b) => b[1] - a[1]);
 
-    // Average visits to contract
-    const contractProps = properties.filter((p) => p.status === 'contract' || p.status === 'completed');
+    // Average visits to contract (only actual contracts, not completed=自社施工)
+    const contractProps = properties.filter((p) => p.status === 'contract');
     const avgVisits = contractProps.length > 0
       ? (contractProps.reduce((sum, p) => sum + (p.visit_count || 1), 0) / contractProps.length).toFixed(1)
       : '-';
@@ -95,15 +96,15 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length)
       : 0;
 
-    // Staff performance
+    // Staff performance (exclude 施工済み)
     const staffMap: Record<string, { visits: number; contacts: number; appos: number; contracts: number }> = {};
-    properties.forEach((p) => {
+    visitProps.forEach((p) => {
       const s = p.staff || '未設定';
       if (!staffMap[s]) staffMap[s] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
       staffMap[s].visits++;
       if (p.status !== 'absent') staffMap[s].contacts++;
       if (p.status === 'appointment') staffMap[s].appos++;
-      if (p.status === 'contract' || p.status === 'completed') staffMap[s].contracts++;
+      if (p.status === 'contract') staffMap[s].contracts++;
     });
     const staffList = Object.entries(staffMap).sort((a, b) => b[1].visits - a[1].visits);
 

@@ -110,9 +110,17 @@ function getRemainingWorkdays(end: Date): number {
 // Parse date string (handles both ISO and 2026/4/7 18:30:00 formats)
 function parseDate(s: string): Date | null {
   if (!s) return null;
-  const d = new Date(s.replace(/\//g, '-').replace(' ', 'T'));
-  if (isNaN(d.getTime())) return null;
-  return d;
+  // Try ISO first
+  let d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  // Japanese format: 2026/4/7 18:30:00 or 2026/4/7
+  const m = s.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (m) {
+    const [, y, mo, da, h, mi, se] = m;
+    d = new Date(Number(y), Number(mo) - 1, Number(da), Number(h || 0), Number(mi || 0), Number(se || 0));
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 // Scale monthly goal to period
@@ -159,8 +167,11 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
   const goal = useMemo(() => scaleGoal(monthlyGoal, period, range), [monthlyGoal, period, range]);
 
   const stats = useMemo(() => {
-    // Filter properties whose last_visit_date or visit history falls in range
-    const inRange = properties.filter((p) => {
+    // Exclude '施工済み' from visit counts (it's just historical data)
+    const visitProps = properties.filter((p) => p.status !== 'completed');
+
+    // Filter properties whose last_visit_date falls in range
+    const inRange = visitProps.filter((p) => {
       const d = parseDate(p.last_visit_date);
       if (!d) return false;
       return d >= range.start && d <= range.end;
@@ -172,7 +183,7 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     const faceToFace = inRange.filter((p) => p.status !== 'absent' && p.status !== 'interphone').length;
     const measurements = inRange.filter((p) => p.status === 'measured').length;
     const appointments = inRange.filter((p) => p.status === 'appointment').length;
-    const contracts = inRange.filter((p) => p.status === 'contract' || p.status === 'completed').length;
+    const contracts = inRange.filter((p) => p.status === 'contract').length;
 
     const remaining = getRemainingWorkdays(range.end);
     const perDay = period === 'day' ? 1 : remaining;

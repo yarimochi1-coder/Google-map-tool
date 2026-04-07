@@ -256,19 +256,32 @@ function MapContent({
     return () => listeners.forEach((l) => google.maps.event.removeListener(l));
   }, [map]);
 
-  // Long press: use map CENTER coordinates (100% accurate, no screen conversion needed)
+  // Long press at the touched location (using OverlayView projection)
   const onAddPinRef = useRef(onAddPin);
   onAddPinRef.current = onAddPin;
   const onAddLayerPinRef = useRef(onAddLayerPin);
   onAddLayerPinRef.current = onAddLayerPin;
   const addModeRef = useRef(addMode);
   addModeRef.current = addMode;
+  const overlayRef = useRef<google.maps.OverlayView | null>(null);
 
   const dispatchAdd = useCallback((lat: number, lng: number) => {
     const mode = addModeRef.current;
     if (mode === 'visit') onAddPinRef.current(lat, lng, '');
     else onAddLayerPinRef.current(lat, lng, mode);
   }, []);
+
+  // Setup OverlayView for accurate pixel-to-LatLng conversion
+  useEffect(() => {
+    if (!map) return;
+    const overlay = new google.maps.OverlayView();
+    overlay.onAdd = () => {};
+    overlay.onRemove = () => {};
+    overlay.draw = () => {};
+    overlay.setMap(map);
+    overlayRef.current = overlay;
+    return () => { overlay.setMap(null); overlayRef.current = null; };
+  }, [map]);
 
   useEffect(() => {
     if (!map) return;
@@ -281,18 +294,33 @@ function MapContent({
       startPos = null;
     };
 
-    const addPinAtCenter = () => {
-      const center = map.getCenter();
-      if (center) {
-        dispatchAdd(center.lat(), center.lng());
+    // Convert client (viewport) coords to lat/lng using map's overlay projection
+    const clientToLatLng = (clientX: number, clientY: number): { lat: number; lng: number } | null => {
+      // Prefer Google Maps native event lat/lng (set by mousemove on PC)
+      if (lastMapLatLng.current) {
+        const r = lastMapLatLng.current;
+        return r;
       }
+      const proj = overlayRef.current?.getProjection();
+      if (!proj) return null;
+      const rect = mapDiv.getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const ll = proj.fromContainerPixelToLatLng(new google.maps.Point(x, y));
+      if (!ll) return null;
+      return { lat: ll.lat(), lng: ll.lng() };
     };
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length !== 1) { cancel(); return; }
       const t = e.touches[0];
       startPos = { x: t.clientX, y: t.clientY };
-      timer = setTimeout(addPinAtCenter, LONG_PRESS_MS);
+      const cx = t.clientX, cy = t.clientY;
+      timer = setTimeout(() => {
+        const coords = clientToLatLng(cx, cy);
+        if (coords) dispatchAdd(coords.lat, coords.lng);
+        startPos = null;
+      }, LONG_PRESS_MS);
     };
 
     const onTouchEnd = () => cancel();
@@ -306,16 +334,13 @@ function MapContent({
       if (Math.sqrt(dx * dx + dy * dy) > MOVE_THRESHOLD) cancel();
     };
 
-    // PC: use Google Maps mousemove for accurate coords
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
       startPos = { x: e.clientX, y: e.clientY };
+      const cx = e.clientX, cy = e.clientY;
       timer = setTimeout(() => {
-        if (lastMapLatLng.current) {
-          dispatchAdd(lastMapLatLng.current.lat, lastMapLatLng.current.lng);
-        } else {
-          addPinAtCenter();
-        }
+        const coords = clientToLatLng(cx, cy);
+        if (coords) dispatchAdd(coords.lat, coords.lng);
         startPos = null;
       }, LONG_PRESS_MS);
     };
@@ -361,13 +386,6 @@ function MapContent({
       <SearchBar onPlaceSelect={handlePlaceSelect} />
       <SyncIndicator isOnline={isOnline} isSyncing={isSyncing} pendingCount={pendingCount} />
 
-      {/* Crosshair - shows where pin will be placed */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-        <div className="w-6 h-6 relative opacity-50">
-          <div className="absolute top-1/2 left-0 right-0 h-px bg-black" />
-          <div className="absolute left-1/2 top-0 bottom-0 w-px bg-black" />
-        </div>
-      </div>
 
       <Map
         mapId={MAP_ID}
