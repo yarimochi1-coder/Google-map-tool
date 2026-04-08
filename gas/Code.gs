@@ -304,6 +304,37 @@ function backfillDates() {
   return filled;
 }
 
+// Utility: 重複行を削除（id が同じ行を統合、空IDも削除、最新のupdated_atを残す）
+function dedupeProperties() {
+  var sheet = getSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 0;
+  var headers = data[0];
+  var idCol = headers.indexOf('id');
+  var updatedCol = headers.indexOf('updated_at');
+  // 後ろから走査して、後出し（updated_atが新しい方を優先）で保持
+  var bestByid = {};
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var id = row[idCol];
+    if (!id) continue; // 空IDは捨てる
+    var u = row[updatedCol] || '';
+    if (!bestByid[id] || String(u) > String(bestByid[id].u)) {
+      bestByid[id] = { row: row, u: u };
+    }
+  }
+  var keptRows = Object.keys(bestByid).map(function(k) { return bestByid[k].row; });
+  // シートクリア→書き直し
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (keptRows.length > 0) {
+    sheet.getRange(2, 1, keptRows.length, headers.length).setValues(keptRows);
+  }
+  var removed = (data.length - 1) - keptRows.length;
+  Logger.log('Kept ' + keptRows.length + ' rows, removed ' + removed);
+  return removed;
+}
+
 function createProperty(data) {
   var sheet = getSheet();
   var id = data.id || Utilities.getUuid();
