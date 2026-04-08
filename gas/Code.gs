@@ -275,6 +275,35 @@ function getPropertyById(id) {
   return null;
 }
 
+// Utility: 空の created_at / last_visit_date を現在時刻で埋める（手動実行用）
+function backfillDates() {
+  var sheet = getSheet();
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var createdCol = headers.indexOf('created_at');
+  var updatedCol = headers.indexOf('updated_at');
+  var lastVisitCol = headers.indexOf('last_visit_date');
+  var now = new Date().toISOString();
+  var filled = 0;
+  for (var i = 1; i < data.length; i++) {
+    var changed = false;
+    if (!data[i][createdCol]) {
+      // updated_at があればそれを優先、なければ now
+      var fallback = data[i][updatedCol] || now;
+      sheet.getRange(i + 1, createdCol + 1).setValue(fallback);
+      changed = true;
+    }
+    if (!data[i][lastVisitCol]) {
+      var lvFallback = data[i][updatedCol] || data[i][createdCol] || now;
+      sheet.getRange(i + 1, lastVisitCol + 1).setValue(lvFallback);
+      changed = true;
+    }
+    if (changed) filled++;
+  }
+  Logger.log('Backfilled ' + filled + ' rows');
+  return filled;
+}
+
 function createProperty(data) {
   var sheet = getSheet();
   var id = data.id || Utilities.getUuid();
