@@ -54,13 +54,26 @@ function navigateDate(baseDate: string, period: Period, direction: number): stri
   return d.toISOString().split('T')[0];
 }
 
-function isDateInRange(dateStr: string, start: string, end: string): boolean {
+function isDateInRange(dateStr: any, start: string, end: string): boolean {
   if (!dateStr) return false;
-  // Handle "2026/4/7 18:30:00", "2026-4-7", "2026-04-07" etc.
-  const datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
-  const m = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (!m) return false;
-  const padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  let padded: string | null = null;
+  // Date object (GAS returns Date for date-formatted cells)
+  if (dateStr instanceof Date && !isNaN(dateStr.getTime())) {
+    padded = `${dateStr.getFullYear()}-${String(dateStr.getMonth() + 1).padStart(2, '0')}-${String(dateStr.getDate()).padStart(2, '0')}`;
+  } else if (typeof dateStr === 'string') {
+    const datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
+    const m = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) {
+      padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    } else {
+      // Fallback: native Date parse
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        padded = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+    }
+  }
+  if (!padded) return false;
   return padded >= start && padded <= end;
 }
 
@@ -75,9 +88,11 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
   const stats = useMemo(() => {
     // Exclude '施工済み' and '成約' from visit counts
     const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
-    const periodVisits = visitProps.filter((p) =>
-      isDateInRange(p.last_visit_date, range.start, range.end)
-    );
+    // 訪問日 (last_visit_date) が空ならピン作成日 (created_at) を訪問日として扱う
+    const periodVisits = visitProps.filter((p) => {
+      const dateRef = p.last_visit_date || p.created_at;
+      return isDateInRange(dateRef, range.start, range.end);
+    });
     const periodCreated = visitProps.filter((p) =>
       isDateInRange(p.created_at, range.start, range.end)
     );
@@ -87,6 +102,12 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
       count: properties.filter((p) => p.status === s.key).length,
       periodCount: periodVisits.filter((p) => p.status === s.key).length,
     }));
+
+    // 期間内訪問のステータス内訳（その日詳細用）
+    const periodStatusBreakdown = STATUS_LIST.map((s) => ({
+      ...s,
+      count: periodVisits.filter((p) => p.status === s.key).length,
+    })).filter((s) => s.count > 0);
 
     const totalPins = properties.length;
     const maxCount = Math.max(...statusCounts.map((s) => s.count), 1);
@@ -110,6 +131,7 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
       appointments: periodAppos,
       contracts: periodContracts,
       statusCounts,
+      periodStatusBreakdown,
       totalPins,
       maxCount,
       staffBreakdown,
@@ -124,6 +146,27 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
       <div className="bg-white shadow-sm sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="text-lg font-bold">ダッシュボード</h1>
+          <button
+            onClick={() => {
+              const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
+              const sample = visitProps.slice(0, 5).map((p) => ({
+                name: p.name,
+                status: p.status,
+                last_visit_date: p.last_visit_date,
+                created_at: p.created_at,
+                created_at_type: typeof p.created_at,
+              }));
+              alert(
+                `range: ${range.start} 〜 ${range.end}\n` +
+                `visitProps: ${visitProps.length}\n` +
+                `periodVisits: ${stats.visits}\n\n` +
+                `sample:\n${JSON.stringify(sample, null, 2)}`
+              );
+            }}
+            className="px-3 py-1 mr-2 rounded-lg bg-yellow-300 text-xs font-bold"
+          >
+            DEBUG
+          </button>
           <button
             onClick={onClose}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xl"
@@ -188,6 +231,23 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
           <p className="text-3xl font-bold text-red-600">{stats.contracts}</p>
         </div>
       </div>
+
+      {/* Period visits status breakdown */}
+      {stats.periodStatusBreakdown.length > 0 && (
+        <div className="px-4 pb-4">
+          <h2 className="text-sm font-bold text-gray-700 mb-2">この期間の訪問内訳</h2>
+          <div className="bg-white rounded-xl shadow-sm divide-y">
+            {stats.periodStatusBreakdown.map((s) => (
+              <div key={s.key} className="flex justify-between items-center px-4 py-2.5">
+                <span className="text-sm font-bold" style={{ color: s.color }}>
+                  {s.icon} {s.label}
+                </span>
+                <span className="text-sm font-bold text-gray-700">{s.count}件</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Staff breakdown */}
       {stats.staffBreakdown.length > 0 && (

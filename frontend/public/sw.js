@@ -1,4 +1,4 @@
-const CACHE_NAME = 'paint-map-v3';
+const CACHE_NAME = 'paint-map-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

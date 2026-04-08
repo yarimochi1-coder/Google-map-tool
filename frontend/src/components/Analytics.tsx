@@ -42,14 +42,18 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     for (let h = 7; h <= 21; h++) hourly[h] = { total: 0, contacted: 0, appo: 0 };
 
     visitProps.forEach((p) => {
-      const match = (p.last_visit_date || '').match(/(\d{1,2}):/);
-      if (match) {
-        const h = parseInt(match[1]);
-        if (hourly[h]) {
-          hourly[h].total++;
-          if (p.status !== 'absent') hourly[h].contacted++;
-          if (p.status === 'appointment' || p.status === 'contract') hourly[h].appo++;
-        }
+      // last_visit_date が空なら created_at から時刻を取得
+      const dateStr = p.last_visit_date || p.created_at || '';
+      // "2026/4/7 17:12:08" or ISO "2026-04-07T17:12:08" を両方対応
+      let h: number | null = null;
+      const m1 = dateStr.match(/\s(\d{1,2}):/);  // スペース後の時刻
+      const m2 = dateStr.match(/T(\d{1,2}):/);   // ISO形式
+      if (m1) h = parseInt(m1[1]);
+      else if (m2) h = parseInt(m2[1]);
+      if (h !== null && hourly[h]) {
+        hourly[h].total++;
+        if (p.status !== 'absent') hourly[h].contacted++;
+        if (p.status === 'appointment' || p.status === 'contract') hourly[h].appo++;
       }
     });
 
