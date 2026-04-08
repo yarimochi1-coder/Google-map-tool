@@ -82,7 +82,6 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
   const [baseDate, setBaseDate] = useState(
     new Date().toISOString().split('T')[0]
   );
-  const [debugOpen, setDebugOpen] = useState(false);
 
   const range = useMemo(() => getDateRange(baseDate, period), [baseDate, period]);
 
@@ -153,12 +152,6 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="text-lg font-bold">ダッシュボード</h1>
           <button
-            onClick={() => setDebugOpen((v) => !v)}
-            className="px-3 py-1 mr-2 rounded-lg bg-yellow-300 text-xs font-bold"
-          >
-            DEBUG
-          </button>
-          <button
             onClick={onClose}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xl"
           >
@@ -222,32 +215,6 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
           <p className="text-3xl font-bold text-red-600">{stats.contracts}</p>
         </div>
       </div>
-
-      {debugOpen && (
-        <div className="mx-4 mb-4 p-3 bg-yellow-100 border-2 border-yellow-400 rounded-lg text-xs font-mono break-all">
-          <div className="font-bold mb-2">DEBUG INFO</div>
-          <div>today: {new Date().toISOString().split('T')[0]}</div>
-          <div>baseDate: {baseDate}</div>
-          <div>range: {range.start} 〜 {range.end}</div>
-          <div>period: {period}</div>
-          <div>total props: {properties.length}</div>
-          <div>visitProps (非施工/非成約): {properties.filter((p) => p.status !== 'completed' && p.status !== 'contract').length}</div>
-          <div>periodVisits: {stats.periodVisits}</div>
-          <div className="font-bold mt-2">sample (最初の5件):</div>
-          {properties
-            .filter((p) => p.status !== 'completed' && p.status !== 'contract')
-            .slice(0, 5)
-            .map((p, i) => (
-              <div key={i} className="mt-1 p-1 bg-white rounded">
-                <div>name: {p.name || '(空)'}</div>
-                <div>status: {p.status}</div>
-                <div>last_visit: {String(p.last_visit_date) || '(空)'}</div>
-                <div>created_at: {String(p.created_at) || '(空)'}</div>
-                <div>created_at type: {typeof p.created_at}</div>
-              </div>
-            ))}
-        </div>
-      )}
 
       {/* Period visits status breakdown */}
       {stats.periodStatusBreakdown.length > 0 && (
