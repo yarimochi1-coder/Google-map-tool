@@ -159,7 +159,7 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
               alert(
                 `range: ${range.start} 〜 ${range.end}\n` +
                 `visitProps: ${visitProps.length}\n` +
-                `periodVisits: ${stats.visits}\n\n` +
+                `periodVisits: ${stats.periodVisits}\n\n` +
                 `sample:\n${JSON.stringify(sample, null, 2)}`
               );
             }}
