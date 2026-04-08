@@ -89,9 +89,14 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
   const stats = useMemo(() => {
     // Exclude '施工済み' and '成約' from visit counts
     const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
-    // 訪問日 (last_visit_date) が空ならピン作成日 (created_at) を訪問日として扱う
+    // 訪問日 (last_visit_date) が空ならピン作成日 (created_at)。両方空なら今日扱い。
+    const todayStr = new Date().toISOString().split('T')[0];
     const periodVisits = visitProps.filter((p) => {
       const dateRef = p.last_visit_date || p.created_at;
+      if (!dateRef) {
+        // 日付データが欠けているピンは今日のものとして扱う
+        return range.start <= todayStr && todayStr <= range.end;
+      }
       return isDateInRange(dateRef, range.start, range.end);
     });
     const periodCreated = visitProps.filter((p) =>
