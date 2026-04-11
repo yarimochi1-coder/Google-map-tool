@@ -22,7 +22,22 @@ interface KpiGoal {
 }
 
 const GOAL_STORAGE_KEY = 'paint-map-contract-goal';
+const HOLIDAYS_STORAGE_KEY = 'paint-map-holidays';
 const DEFAULT_CONTRACT_GOAL = 5;
+
+function loadHolidays(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(HOLIDAYS_STORAGE_KEY) || '[]');
+  } catch { return []; }
+}
+
+function saveHolidays(days: string[]) {
+  localStorage.setItem(HOLIDAYS_STORAGE_KEY, JSON.stringify(days));
+}
+
+function formatDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // Calculate KPI targets from contract goal using past data conversion rates
 function calcGoalFromContracts(targetContracts: number): KpiGoal {
@@ -84,24 +99,26 @@ function getDateRange(period: Period): { start: Date; end: Date; label: string }
   return { start, end, label: `${now.getFullYear()}年${now.getMonth() + 1}月` };
 }
 
-// Get workdays in the period (excluding Sunday)
-function getWorkdaysInRange(start: Date, end: Date): number {
+// Get workdays in the period (excluding Sunday and holidays)
+function getWorkdaysInRange(start: Date, end: Date, holidays: string[] = []): number {
   let count = 0;
+  const hSet = new Set(holidays);
   const cur = new Date(start);
   while (cur <= end) {
-    if (cur.getDay() !== 0) count++;
+    if (cur.getDay() !== 0 && !hSet.has(formatDateStr(cur))) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
 }
 
-function getRemainingWorkdays(end: Date): number {
+function getRemainingWorkdays(end: Date, holidays: string[] = []): number {
   const now = new Date();
   if (now > end) return 0;
   let count = 0;
+  const hSet = new Set(holidays);
   const cur = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   while (cur <= end) {
-    if (cur.getDay() !== 0) count++;
+    if (cur.getDay() !== 0 && !hSet.has(formatDateStr(cur))) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
@@ -124,14 +141,15 @@ function parseDate(s: string): Date | null {
 }
 
 // Scale monthly goal to period
-function scaleGoal(monthly: KpiGoal, period: Period, range: { start: Date; end: Date }): KpiGoal {
+function scaleGoal(monthly: KpiGoal, period: Period, range: { start: Date; end: Date }, holidays: string[] = []): KpiGoal {
   if (period === 'month') return monthly;
   const monthWorkdays = getWorkdaysInRange(
     new Date(range.start.getFullYear(), range.start.getMonth(), 1),
-    new Date(range.start.getFullYear(), range.start.getMonth() + 1, 0)
+    new Date(range.start.getFullYear(), range.start.getMonth() + 1, 0),
+    holidays
   );
-  const periodWorkdays = period === 'day' ? 1 : getWorkdaysInRange(range.start, range.end);
-  const ratio = periodWorkdays / monthWorkdays;
+  const periodWorkdays = period === 'day' ? 1 : getWorkdaysInRange(range.start, range.end, holidays);
+  const ratio = monthWorkdays > 0 ? periodWorkdays / monthWorkdays : 0;
   return {
     visits: Math.ceil(monthly.visits * ratio),
     interphone: Math.ceil(monthly.interphone * ratio),
@@ -145,15 +163,18 @@ function scaleGoal(monthly: KpiGoal, period: Period, range: { start: Date; end: 
 export function VisitPlan({ properties, userPosition, onSelectProperty, onClose }: VisitPlanProps) {
   const [period, setPeriod] = useState<Period>('day');
   const [showGoalEdit, setShowGoalEdit] = useState(false);
+  const [showHolidayEdit, setShowHolidayEdit] = useState(false);
   const [contractGoal, setContractGoal] = useState<number>(DEFAULT_CONTRACT_GOAL);
+  const [holidays, setHolidaysState] = useState<string[]>([]);
 
-  // Load saved contract goal
+  // Load saved data
   useEffect(() => {
     const saved = localStorage.getItem(GOAL_STORAGE_KEY);
     if (saved) {
       const n = parseInt(saved);
       if (!isNaN(n) && n > 0) setContractGoal(n);
     }
+    setHolidaysState(loadHolidays());
   }, []);
 
   const saveGoal = (n: number) => {
@@ -161,10 +182,15 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     localStorage.setItem(GOAL_STORAGE_KEY, String(n));
   };
 
+  const updateHolidays = (days: string[]) => {
+    setHolidaysState(days);
+    saveHolidays(days);
+  };
+
   const monthlyGoal = useMemo(() => calcGoalFromContracts(contractGoal), [contractGoal]);
 
   const range = useMemo(() => getDateRange(period), [period]);
-  const goal = useMemo(() => scaleGoal(monthlyGoal, period, range), [monthlyGoal, period, range]);
+  const goal = useMemo(() => scaleGoal(monthlyGoal, period, range, holidays), [monthlyGoal, period, range, holidays]);
 
   const stats = useMemo(() => {
     // Exclude '施工済み' and '成約' from visit counts
@@ -190,14 +216,14 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
       return d && d >= range.start && d <= range.end;
     }).length;
 
-    const remaining = getRemainingWorkdays(range.end);
+    const remaining = getRemainingWorkdays(range.end, holidays);
     const perDay = period === 'day' ? 1 : remaining;
 
     return {
       visits, interphone, faceToFace, measurements, appointments, contracts,
       remaining, perDay,
     };
-  }, [properties, range, period]);
+  }, [properties, range, period, holidays]);
 
   // Today's visit list: 再訪問日が今日に設定されている物件のみ
   const todayList = useMemo(() => {
@@ -297,11 +323,23 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
 
           {period !== 'day' && stats.remaining > 0 && (
             <div className="mt-3 pt-3 border-t">
-              <p className="text-xs text-gray-500">残り営業日: <span className="font-bold text-gray-700">{stats.remaining}日</span></p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-gray-500">残り営業日: <span className="font-bold text-gray-700">{stats.remaining}日</span></p>
+                <button
+                  onClick={() => setShowHolidayEdit(!showHolidayEdit)}
+                  className="text-xs text-orange-500 font-bold"
+                >
+                  {showHolidayEdit ? '閉じる' : '休日設定'}
+                </button>
+              </div>
               <p className="text-xs text-gray-500 mt-0.5">
                 1日あたり必要訪問数: <span className="font-bold text-blue-600">{Math.max(0, Math.ceil((goal.visits - stats.visits) / stats.remaining))}件</span>
               </p>
             </div>
+          )}
+
+          {showHolidayEdit && (
+            <HolidayEditor holidays={holidays} onUpdate={updateHolidays} />
           )}
         </div>
       </div>
@@ -423,6 +461,118 @@ function ContractGoalEditor({ value, onSave }: { value: number; onSave: (n: numb
       >
         保存
       </button>
+    </div>
+  );
+}
+
+function HolidayEditor({ holidays, onUpdate }: { holidays: string[]; onUpdate: (days: string[]) => void }) {
+  const [newDate, setNewDate] = useState('');
+
+  // 今月のカレンダー表示用
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDow = new Date(year, month, 1).getDay();
+
+  const addHoliday = (dateStr: string) => {
+    if (!holidays.includes(dateStr)) {
+      onUpdate([...holidays, dateStr].sort());
+    }
+  };
+
+  const removeHoliday = (dateStr: string) => {
+    onUpdate(holidays.filter((d) => d !== dateStr));
+  };
+
+  const toggleDate = (dateStr: string) => {
+    if (holidays.includes(dateStr)) removeHoliday(dateStr);
+    else addHoliday(dateStr);
+  };
+
+  const DOW = ['日', '月', '火', '水', '木', '金', '土'];
+
+  return (
+    <div className="mt-3 pt-3 border-t">
+      <p className="text-xs font-bold text-gray-600 mb-2">
+        {year}年{month + 1}月の休日設定
+        <span className="text-gray-400 font-normal ml-1">（タップで切替）</span>
+      </p>
+
+      {/* カレンダーグリッド */}
+      <div className="grid grid-cols-7 gap-0.5 mb-2">
+        {DOW.map((d, i) => (
+          <div key={d} className={`text-center text-[9px] font-bold py-0.5 ${i === 0 ? 'text-red-400' : 'text-gray-400'}`}>
+            {d}
+          </div>
+        ))}
+        {Array.from({ length: firstDow }).map((_, i) => (
+          <div key={`empty-${i}`} />
+        ))}
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const d = new Date(year, month, day);
+          const isSunday = d.getDay() === 0;
+          const isHoliday = holidays.includes(dateStr);
+          const isToday = dateStr === formatDateStr(now);
+          const isPast = d < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+          return (
+            <button
+              key={day}
+              onClick={() => !isSunday && toggleDate(dateStr)}
+              disabled={isSunday}
+              className={`text-center text-xs py-1.5 rounded-lg font-bold transition-all ${
+                isSunday
+                  ? 'text-red-300 bg-red-50'
+                  : isHoliday
+                  ? 'bg-orange-500 text-white'
+                  : isPast
+                  ? 'text-gray-300'
+                  : isToday
+                  ? 'bg-blue-100 text-blue-600 border border-blue-300'
+                  : 'text-gray-700 active:bg-gray-100'
+              }`}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 手動追加（来月以降用） */}
+      <div className="flex gap-2 mt-2">
+        <input
+          type="date"
+          value={newDate}
+          onChange={(e) => setNewDate(e.target.value)}
+          className="flex-1 border rounded-lg px-2 py-1.5 text-xs"
+        />
+        <button
+          onClick={() => {
+            if (newDate) { addHoliday(newDate); setNewDate(''); }
+          }}
+          className="px-3 py-1.5 bg-orange-500 text-white rounded-lg text-xs font-bold"
+        >
+          追加
+        </button>
+      </div>
+
+      {/* 設定済み休日一覧 */}
+      {holidays.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {holidays.map((d) => (
+            <span
+              key={d}
+              onClick={() => removeHoliday(d)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-[10px] font-bold cursor-pointer"
+            >
+              {d.substring(5).replace('-', '/')} ×
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
