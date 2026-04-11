@@ -126,12 +126,16 @@ export function useProperties() {
   const updateStatus = useCallback(
     async (id: string, status: PropertyStatus) => {
       const now = new Date().toLocaleString('ja-JP');
-      const todayStr = new Date().toISOString().split('T')[0];
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       const prop = properties.find((p) => p.id === id);
 
       // 同日にすでに訪問記録済みならvisit_countを増やさない（ステータス修正扱い）
       const lastDate = prop?.last_visit_date || '';
-      const lastDatePart = lastDate.split(' ')[0].split('T')[0].replace(/\//g, '-');
+      // "2026/4/12 14:30" → "2026-04-12" にゼロ埋めして正規化
+      const rawParts = lastDate.split(' ')[0].split('T')[0].replace(/\//g, '-');
+      const m = rawParts.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+      const lastDatePart = m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : '';
       const alreadyVisitedToday = lastDatePart === todayStr;
 
       await updateProperty(id, {
