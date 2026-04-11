@@ -2,6 +2,14 @@ import { useState, useEffect } from 'react';
 import type { Property, PropertyStatus } from '../types';
 import { StatusSelector } from './StatusSelector';
 import { getStatusConfig } from '../lib/statusConfig';
+import { gasGet } from '../lib/gasClient';
+
+interface VisitRecord {
+  status: string;
+  staff: string;
+  visited_at: string;
+  memo: string;
+}
 
 interface PropertyDetailProps {
   property: Property;
@@ -21,6 +29,23 @@ export function PropertyDetail({
   onClose,
 }: PropertyDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [history, setHistory] = useState<VisitRecord[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // 訪問履歴を取得
+  useEffect(() => {
+    if (property.id) {
+      gasGet<VisitRecord[]>('history', { property_id: property.id }).then((res) => {
+        if (res.success && res.data) {
+          // 新しい順にソート
+          const sorted = res.data.sort((a, b) =>
+            String(b.visited_at).localeCompare(String(a.visited_at))
+          );
+          setHistory(sorted);
+        }
+      }).catch(() => {});
+    }
+  }, [property.id, property.visit_count]);
   const [name, setName] = useState(property.name);
   const [memo, setMemo] = useState(property.memo);
   const [buildingAge, setBuildingAge] = useState(property.building_age);
@@ -206,6 +231,45 @@ export function PropertyDetail({
         <div className="px-4 pb-2 text-xs text-gray-400 flex gap-3">
           {property.last_visit_date && <span>最終訪問: {property.last_visit_date}</span>}
           {property.staff && <span>担当: {property.staff}</span>}
+        </div>
+      )}
+
+      {/* Visit history */}
+      {history.length > 0 && (
+        <div className="px-4 pb-3">
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="w-full flex items-center justify-between py-2 text-sm font-bold text-gray-700"
+          >
+            <span>訪問履歴（{history.length}件）</span>
+            <span className="text-gray-400">{showHistory ? '▲' : '▼'}</span>
+          </button>
+          {showHistory && (
+            <div className="bg-gray-50 rounded-xl divide-y divide-gray-200 overflow-hidden">
+              {history.map((h, i) => {
+                const cfg = getStatusConfig(h.status as PropertyStatus);
+                return (
+                  <div key={i} className="px-3 py-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
+                        style={{ backgroundColor: cfg.color }}
+                      >
+                        {cfg.icon} {cfg.label}
+                      </span>
+                      <span className="text-[10px] text-gray-400">
+                        {String(h.visited_at).replace('T', ' ').substring(0, 19)}
+                      </span>
+                    </div>
+                    <div className="flex gap-2 mt-0.5 text-[10px] text-gray-400">
+                      {h.staff && <span>担当: {h.staff}</span>}
+                      {h.memo && <span className="text-orange-500">{h.memo}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
