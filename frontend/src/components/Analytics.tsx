@@ -217,6 +217,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       totalVisits, funnel, overallRate, avgVisits, avgAmount,
       hourly, dowStats, weekday, weekend, cross,
       staffList, rejectionList,
+      historyCount: fh.length,
     };
   }, [properties, visitHistory, dateRange]);
 
@@ -288,8 +289,15 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       </div>
 
       {/* 時間帯別在宅率 & 対面率 */}
+      {stats.historyCount < 5 && (
+        <div className="px-4 pb-2">
+          <p className="text-xs text-orange-500 bg-orange-50 rounded-lg px-3 py-2">
+            ⚠ 訪問履歴が{stats.historyCount}件のみです。時間帯・曜日分析はアプリでステータス変更した訪問のみが対象です。データが蓄積されるほど精度が上がります。
+          </p>
+        </div>
+      )}
       <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">時間帯別分析（10〜19時）</h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-2">時間帯別分析（10〜19時）<span className="text-xs font-normal text-gray-400 ml-1">n={stats.historyCount}</span></h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="flex items-end gap-1 h-28">
             {Object.entries(stats.hourly).map(([h, d]) => {
@@ -331,9 +339,9 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         </div>
       </div>
 
-      {/* 曜日別分析 */}
-      <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">曜日別分析</h2>
+      {/* 曜日別分析 - 10件以上で表示 */}
+      {stats.historyCount >= 10 && <div className="px-4 pb-4">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">曜日別分析 <span className="text-xs font-normal text-gray-400">n={stats.historyCount}</span></h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="divide-y text-[11px]">
             <div className="flex py-1 font-bold text-gray-500">
@@ -356,11 +364,11 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
             })}
           </div>
         </div>
-      </div>
+      </div>}
 
-      {/* 平日 vs 土日 */}
-      <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">平日 vs 土日</h2>
+      {/* 平日 vs 土日 - 10件以上で表示 */}
+      {stats.historyCount >= 10 && <div className="px-4 pb-4">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">平日 vs 土日 <span className="text-xs font-normal text-gray-400">n={stats.historyCount}</span></h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="grid grid-cols-2 gap-3">
             {[
@@ -382,11 +390,11 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
             })}
           </div>
         </div>
-      </div>
+      </div>}
 
-      {/* クロス分析: 曜日×時間帯 */}
-      <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">クロス分析（曜日×時間帯）</h2>
+      {/* クロス分析: 曜日×時間帯 - 20件以上で表示 */}
+      {stats.historyCount >= 20 && <div className="px-4 pb-4">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">クロス分析（曜日×時間帯）<span className="text-xs font-normal text-gray-400 ml-1">n={stats.historyCount}</span></h2>
         <div className="flex gap-1 mb-2">
           <button onClick={() => setCrossMetric('contact')}
             className={`flex-1 py-1 rounded-lg text-xs font-bold ${crossMetric === 'contact' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-500'}`}>在宅率</button>
@@ -434,7 +442,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded" style={{ backgroundColor: '#F44336' }} />40%未満</span>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Staff Performance */}
       {stats.staffList.length > 0 && (
