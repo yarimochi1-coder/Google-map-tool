@@ -1,8 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import type { Property } from '../types';
-import { STATUS_LIST } from '../lib/statusConfig';
-import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
 import { gasGet } from '../lib/gasClient';
+import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
 
 interface VisitRecord {
   property_id: string;
@@ -17,8 +16,28 @@ interface AnalyticsProps {
   onClose: () => void;
 }
 
+// 接触ステータス
+const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng'];
+// 対面ステータス
+const FACE_STATUSES = ['instant_return', 'ng'];
+
+type DateRange = { start: string; end: string; label: string };
+
+function isDateInRange(dateStr: any, start: string, end: string): boolean {
+  if (!dateStr) return false;
+  const s = String(dateStr);
+  const datePart = s.split(' ')[0].split('T')[0].replace(/\//g, '-');
+  const m = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!m) return false;
+  const padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  return padded >= start && padded <= end;
+}
+
+function formatDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function Analytics({ properties, onClose }: AnalyticsProps) {
-  // visit_history をGASから取得（時間帯別分析用）
   const [visitHistory, setVisitHistory] = useState<VisitRecord[]>([]);
   useEffect(() => {
     gasGet<VisitRecord[]>('history').then((res) => {
@@ -26,43 +45,87 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     }).catch(() => {});
   }, []);
 
+  // 期間設定
+  const [rangeType, setRangeType] = useState<'all' | 'month' | 'week' | 'custom'>('all');
+  const [customStart, setCustomStart] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1);
+    return formatDate(d);
+  });
+  const [customEnd, setCustomEnd] = useState(() => formatDate(new Date()));
+
+  const dateRange = useMemo((): DateRange | null => {
+    const today = new Date();
+    if (rangeType === 'all') return null; // null = フィルタなし
+    if (rangeType === 'week') {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 7);
+      return { start: formatDate(start), end: formatDate(today), label: '過去7日間' };
+    }
+    if (rangeType === 'month') {
+      const start = new Date(today);
+      start.setMonth(today.getMonth() - 1);
+      return { start: formatDate(start), end: formatDate(today), label: '過去1ヶ月' };
+    }
+    return { start: customStart, end: customEnd, label: `${customStart} 〜 ${customEnd}` };
+  }, [rangeType, customStart, customEnd]);
+
   const stats = useMemo(() => {
-    // Exclude '施工済み' and '成約' from visit-related stats
-    const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
-    const total = visitProps.length;
     if (properties.length === 0) return null;
 
-    // Status counts (all statuses including completed)
-    const sc: Record<string, number> = {};
-    STATUS_LIST.forEach((s) => { sc[s.key] = 0; });
-    properties.forEach((p) => { sc[p.status] = (sc[p.status] || 0) + 1; });
+    // 期間フィルタ
+    const filtered = dateRange
+      ? properties.filter((p) => {
+          const dateRef = p.last_visit_date || p.created_at;
+          if (!dateRef) return true;
+          return isDateInRange(dateRef, dateRange.start, dateRange.end);
+        })
+      : properties;
 
-    const absent = sc['absent'] || 0;
-    const contacted = total - absent;
-    const measured = sc['measured'] || 0;
-    const appointment = sc['appointment'] || 0;
-    const contract = sc['contract'] || 0;
-    const successTotal = contract;
+    // 施工済み・成約を除外
+    const visitProps = filtered.filter((p) => p.status !== 'completed' && p.status !== 'contract');
+    const totalVisits = visitProps.length;
 
-    // Funnel
+    // ファネル用カウント
+    const contacts = visitProps.filter((p) => CONTACT_STATUSES.includes(p.status)).length;
+    const faceToFace = visitProps.filter((p) => FACE_STATUSES.includes(p.status)).length;
+    const talkCount = visitProps.filter((p) => p.status === 'ng').length;
+    const measured = filtered.filter((p) => p.status === 'measured').length;
+    const appointments = filtered.filter((p) => p.status === 'appointment').length;
+    const contracts = filtered.filter((p) => p.status === 'contract').length;
+
+    // ファネル（各段階の率は前段階に対する割合）
     const funnel = [
-      { label: '総訪問', value: total, rate: 100 },
-      { label: '在宅（対面）', value: contacted, rate: total > 0 ? Math.round(contacted / total * 100) : 0 },
-      { label: '計測済み', value: measured, rate: contacted > 0 ? Math.round(measured / contacted * 100) : 0 },
-      { label: 'アポ獲得', value: appointment, rate: measured > 0 ? Math.round(appointment / measured * 100) : 0 },
-      { label: '成約', value: successTotal, rate: appointment > 0 ? Math.round(successTotal / appointment * 100) : 0 },
+      { label: '総訪問', value: totalVisits, rate: 100, color: '#64B5F6' },
+      { label: '総接触数', value: contacts, rate: totalVisits > 0 ? Math.round(contacts / totalVisits * 100) : 0, color: '#4CAF50' },
+      { label: '総対面数', value: faceToFace, rate: contacts > 0 ? Math.round(faceToFace / contacts * 100) : 0, color: '#FF9800' },
+      { label: '総話し込み数', value: talkCount, rate: faceToFace > 0 ? Math.round(talkCount / faceToFace * 100) : 0, color: '#9C27B0' },
+      { label: '総計測数', value: measured, rate: talkCount > 0 ? Math.round(measured / talkCount * 100) : 0, color: '#00BCD4' },
+      { label: '総アポ数', value: appointments, rate: measured > 0 ? Math.round(appointments / measured * 100) : 0, color: '#2196F3' },
+      { label: '総成約数', value: contracts, rate: appointments > 0 ? Math.round(appointments > 0 ? contracts / appointments * 100 : 0) : 0, color: '#F44336' },
     ];
-    const overallRate = total > 0 ? (successTotal / total * 100).toFixed(1) : '0';
+    const overallRate = totalVisits > 0 ? (contracts / totalVisits * 100).toFixed(2) : '0';
 
-    // Hourly analysis (visit_historyから正確な訪問時刻を使用)
-    const hourly: Record<number, { total: number; contacted: number; appo: number }> = {};
-    for (let h = 7; h <= 21; h++) hourly[h] = { total: 0, contacted: 0, appo: 0 };
+    // 成約系KPI
+    const contractProps = filtered.filter((p) => p.status === 'contract');
+    const avgVisits = contractProps.length > 0
+      ? (contractProps.reduce((sum, p) => sum + (p.visit_count || 1), 0) / contractProps.length).toFixed(1)
+      : '-';
+    const amounts = contractProps.map((p) => Number(p.contract_amount)).filter((a) => a > 0);
+    const avgAmount = amounts.length > 0
+      ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length)
+      : 0;
 
-    // ステータス修正の重複を除外（同一property_id+同日で最初のレコードだけカウント）
+    // 時間帯別在宅率 (10時〜19時) from visit_history
+    const hourly: Record<number, { total: number; contacted: number }> = {};
+    for (let h = 10; h <= 19; h++) hourly[h] = { total: 0, contacted: 0 };
+
+    // visit_historyをフィルタ
     const visitedKey = new Set<string>();
     const filteredHistory = visitHistory.filter((r) => {
-      if (r.memo === 'ステータス修正') return false; // 修正は除外
+      if (r.memo === 'ステータス修正') return false;
       if (r.status === 'completed' || r.status === 'contract') return false;
+      // 期間フィルタ
+      if (dateRange && !isDateInRange(r.visited_at, dateRange.start, dateRange.end)) return false;
       const dateStr = String(r.visited_at || '');
       const datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
       const key = `${r.property_id}_${datePart}`;
@@ -78,77 +141,50 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       const m2 = dateStr.match(/T(\d{1,2}):/);
       if (m1) h = parseInt(m1[1]);
       else if (m2) h = parseInt(m2[1]);
-      if (h !== null && hourly[h]) {
+      if (h !== null && hourly[h] !== undefined) {
         hourly[h].total++;
         if (r.status !== 'absent') hourly[h].contacted++;
-        if (r.status === 'appointment') hourly[h].appo++;
       }
     });
 
-    const bestHour = Object.entries(hourly).reduce((best, [h, d]) => {
-      const rate = d.total > 0 ? d.contacted / d.total : 0;
-      return rate > best.rate ? { hour: Number(h), rate, data: d } : best;
-    }, { hour: 0, rate: 0, data: { total: 0, contacted: 0, appo: 0 } });
-
-    // Response type analysis
-    const responseTypes = ['child', 'grandmother', 'grandfather'] as const;
-    const responseStats = responseTypes.map((type) => {
-      const cfg = STATUS_LIST.find((s) => s.key === type);
-      const count = sc[type] || 0;
-      return { key: type, label: cfg?.label || type, icon: cfg?.icon || '', count };
-    });
-
-    // Rejection reasons
+    // 断り理由
     const rejections: Record<string, number> = {};
-    properties.forEach((p) => {
-      if (p.rejection_reason) {
-        rejections[p.rejection_reason] = (rejections[p.rejection_reason] || 0) + 1;
-      }
+    filtered.forEach((p) => {
+      if (p.rejection_reason) rejections[p.rejection_reason] = (rejections[p.rejection_reason] || 0) + 1;
     });
     const rejectionList = Object.entries(rejections).sort((a, b) => b[1] - a[1]);
 
-    // Roof type breakdown
+    // 屋根種別
     const roofTypes: Record<string, number> = {};
-    properties.forEach((p) => {
-      if (p.roof_type) {
-        roofTypes[p.roof_type] = (roofTypes[p.roof_type] || 0) + 1;
-      }
+    filtered.forEach((p) => {
+      if (p.roof_type) roofTypes[p.roof_type] = (roofTypes[p.roof_type] || 0) + 1;
     });
     const roofList = Object.entries(roofTypes).sort((a, b) => b[1] - a[1]);
 
-    // Average visits to contract (only actual contracts, not completed=自社施工)
-    const contractProps = properties.filter((p) => p.status === 'contract');
-    const avgVisits = contractProps.length > 0
-      ? (contractProps.reduce((sum, p) => sum + (p.visit_count || 1), 0) / contractProps.length).toFixed(1)
-      : '-';
-
-    // Average contract amount
-    const amounts = contractProps.map((p) => Number(p.contract_amount)).filter((a) => a > 0);
-    const avgAmount = amounts.length > 0
-      ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length)
-      : 0;
-
-    // Staff performance (exclude 施工済み)
+    // 担当者別
     const staffMap: Record<string, { visits: number; contacts: number; appos: number; contracts: number }> = {};
     visitProps.forEach((p) => {
       const s = p.staff || '未設定';
       if (!staffMap[s]) staffMap[s] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
       staffMap[s].visits++;
-      if (p.status !== 'absent') staffMap[s].contacts++;
+      if (CONTACT_STATUSES.includes(p.status)) staffMap[s].contacts++;
       if (p.status === 'appointment') staffMap[s].appos++;
-      if (p.status === 'contract') staffMap[s].contracts++;
+    });
+    filtered.filter((p) => p.status === 'contract').forEach((p) => {
+      const s = p.staff || '未設定';
+      if (!staffMap[s]) staffMap[s] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
+      staffMap[s].contracts++;
     });
     const staffList = Object.entries(staffMap).sort((a, b) => b[1].visits - a[1].visits);
 
     return {
-      total, contacted, funnel, overallRate,
-      hourly, bestHour,
-      responseStats,
-      rejectionList, roofList,
+      totalVisits, funnel, overallRate,
+      hourly,
       avgVisits, avgAmount,
-      staffList, sc,
+      rejectionList, roofList,
+      staffList,
     };
-  }, [properties, visitHistory]);
+  }, [properties, visitHistory, dateRange]);
 
   if (!stats) {
     return (
@@ -167,6 +203,40 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         <div className="flex items-center justify-between px-4 py-3">
           <h1 className="text-lg font-bold">数値分析</h1>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xl">×</button>
+        </div>
+
+        {/* 期間設定 */}
+        <div className="px-4 pb-3">
+          <div className="flex gap-1 mb-2">
+            {(['all', 'week', 'month', 'custom'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setRangeType(t)}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${
+                  rangeType === t ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'
+                }`}
+              >
+                {{ all: '全期間', week: '7日', month: '1ヶ月', custom: '期間指定' }[t]}
+              </button>
+            ))}
+          </div>
+          {rangeType === 'custom' && (
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="flex-1 border rounded-lg px-2 py-1.5 text-xs"
+              />
+              <span className="text-xs text-gray-400">〜</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="flex-1 border rounded-lg px-2 py-1.5 text-xs"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -194,14 +264,17 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
             <div key={f.label}>
               <div className="flex justify-between text-xs mb-0.5">
                 <span className="font-bold text-gray-700">{f.label}</span>
-                <span className="text-gray-500">{f.value}件 ({f.rate}%)</span>
+                <span className="text-gray-500">
+                  {f.value}件
+                  {i > 0 && <span className="ml-1 font-bold" style={{ color: f.color }}>({f.rate}%)</span>}
+                </span>
               </div>
               <div className="h-5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
-                    width: `${stats.total > 0 ? (f.value / stats.total) * 100 : 0}%`,
-                    backgroundColor: ['#64B5F6','#4CAF50','#9C27B0','#2196F3','#F44336'][i],
+                    width: `${stats.totalVisits > 0 ? (f.value / stats.totalVisits) * 100 : 0}%`,
+                    backgroundColor: f.color,
                     minWidth: f.value > 0 ? '8px' : '0',
                   }}
                 />
@@ -211,38 +284,48 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         </div>
       </div>
 
-      {/* Hourly */}
+      {/* Hourly 10時〜19時 */}
       <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">
-          時間帯別在宅率
-          {stats.bestHour.data.total > 0 && (
-            <span className="text-xs font-normal text-blue-500 ml-2">
-              ベスト: {stats.bestHour.hour}時台（{Math.round(stats.bestHour.rate * 100)}%）
-            </span>
-          )}
-        </h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-2">時間帯別在宅率</h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
-          <div className="flex items-end gap-1 h-24">
-            {Object.entries(stats.hourly).map(([h, d]) => (
-              <div key={h} className="flex-1 flex flex-col items-center gap-0.5">
-                <div className="w-full flex flex-col items-center" style={{ height: '80px' }}>
-                  <div
-                    className="w-full rounded-t"
-                    style={{
-                      height: `${(d.total / maxHourly) * 100}%`,
-                      backgroundColor: d.total > 0 && d.contacted / d.total > 0.5 ? '#4CAF50' : '#E0E0E0',
-                      minHeight: d.total > 0 ? '4px' : '0',
-                      marginTop: 'auto',
-                    }}
-                  />
+          {/* バーチャート */}
+          <div className="flex items-end gap-1 h-28">
+            {Object.entries(stats.hourly).map(([h, d]) => {
+              const rate = d.total > 0 ? Math.round(d.contacted / d.total * 100) : 0;
+              return (
+                <div key={h} className="flex-1 flex flex-col items-center gap-0.5">
+                  <span className="text-[9px] font-bold" style={{ color: rate >= 50 ? '#4CAF50' : rate > 0 ? '#FF9800' : '#ccc' }}>
+                    {d.total > 0 ? `${rate}%` : ''}
+                  </span>
+                  <div className="w-full flex flex-col items-center" style={{ height: '70px' }}>
+                    <div
+                      className="w-full rounded-t"
+                      style={{
+                        height: `${(d.total / maxHourly) * 100}%`,
+                        backgroundColor: rate >= 50 ? '#4CAF50' : rate > 0 ? '#FF9800' : '#E0E0E0',
+                        minHeight: d.total > 0 ? '4px' : '0',
+                        marginTop: 'auto',
+                      }}
+                    />
+                  </div>
+                  <span className="text-[9px] text-gray-500 font-bold">{h}時</span>
                 </div>
-                <span className="text-[8px] text-gray-400">{h}</span>
-              </div>
-            ))}
+              );
+            })}
           </div>
-          <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-400">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-500" />在宅率50%+</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-gray-300" />50%未満</span>
+          {/* 数値テーブル */}
+          <div className="mt-3 divide-y">
+            {Object.entries(stats.hourly).map(([h, d]) => {
+              if (d.total === 0) return null;
+              const rate = Math.round(d.contacted / d.total * 100);
+              return (
+                <div key={h} className="flex justify-between py-1 text-xs">
+                  <span className="text-gray-600 font-bold">{h}時台</span>
+                  <span className="text-gray-400">{d.total}件中 {d.contacted}件在宅</span>
+                  <span className="font-bold" style={{ color: rate >= 50 ? '#4CAF50' : '#FF9800' }}>{rate}%</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -259,7 +342,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
                   <span className="text-xs text-gray-400">{d.visits}件訪問</span>
                 </div>
                 <div className="flex gap-3 mt-1 text-xs">
-                  <span className="text-green-600">対面率 {d.visits > 0 ? Math.round(d.contacts / d.visits * 100) : 0}%</span>
+                  <span className="text-green-600">接触率 {d.visits > 0 ? Math.round(d.contacts / d.visits * 100) : 0}%</span>
                   <span className="text-blue-600">アポ {d.appos}</span>
                   <span className="text-red-600">成約 {d.contracts}</span>
                 </div>
@@ -268,20 +351,6 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
           </div>
         </div>
       )}
-
-      {/* Response Type */}
-      <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">対応者別件数</h2>
-        <div className="bg-white rounded-xl shadow-sm p-3 flex gap-3 justify-around">
-          {stats.responseStats.map((r) => (
-            <div key={r.key} className="text-center">
-              <span className="text-2xl">{r.icon}</span>
-              <p className="text-xs text-gray-500 mt-0.5">{r.label}</p>
-              <p className="text-lg font-bold">{r.count}</p>
-            </div>
-          ))}
-        </div>
-      </div>
 
       {/* Rejection Reasons */}
       {stats.rejectionList.length > 0 && (
@@ -321,11 +390,9 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
   );
 }
 
-// Past data trends from imported CSV
 function PastDataSection({ dailyStats }: { dailyStats: PastDailyStat[] }) {
   const monthly = useMemo(() => {
     const months: Record<string, { visits: number; contacts: number; faceToFace: number; measurements: number; appointments: number; contracts: number; days: number }> = {};
-
     dailyStats.forEach((d) => {
       const m = d.date.substring(0, 7);
       if (!months[m]) months[m] = { visits: 0, contacts: 0, faceToFace: 0, measurements: 0, appointments: 0, contracts: 0, days: 0 };
@@ -337,19 +404,16 @@ function PastDataSection({ dailyStats }: { dailyStats: PastDailyStat[] }) {
       months[m].contracts += d.contracts;
       months[m].days++;
     });
-
     return Object.entries(months).sort((a, b) => a[0].localeCompare(b[0]));
   }, [dailyStats]);
 
   const totals = PAST_TOTALS;
-
   const maxVisits = Math.max(...monthly.map(([, d]) => d.visits), 1);
 
   return (
     <>
-      {/* Overall past stats */}
       <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">過去実績（インポート済み {dailyStats.length}日分）</h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-2">過去実績（{dailyStats.length}日分）</h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="grid grid-cols-3 gap-2 text-center mb-3">
             <div>
@@ -366,27 +430,14 @@ function PastDataSection({ dailyStats }: { dailyStats: PastDailyStat[] }) {
             </div>
           </div>
           <div className="space-y-1 text-xs text-gray-600">
-            <div className="flex justify-between">
-              <span>接触率</span>
-              <span className="font-bold">{totals.visits > 0 ? (totals.contacts / totals.visits * 100).toFixed(1) : 0}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span>対面率</span>
-              <span className="font-bold">{totals.visits > 0 ? (totals.faceToFace / totals.visits * 100).toFixed(1) : 0}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span>アポ率（対訪問）</span>
-              <span className="font-bold">{totals.visits > 0 ? (totals.appointments / totals.visits * 100).toFixed(2) : 0}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span>成約率（対アポ）</span>
-              <span className="font-bold">{totals.appointments > 0 ? (totals.contracts / totals.appointments * 100).toFixed(1) : 0}%</span>
-            </div>
+            <div className="flex justify-between"><span>接触率</span><span className="font-bold">{totals.visits > 0 ? (totals.contacts / totals.visits * 100).toFixed(1) : 0}%</span></div>
+            <div className="flex justify-between"><span>対面率</span><span className="font-bold">{totals.visits > 0 ? (totals.faceToFace / totals.visits * 100).toFixed(1) : 0}%</span></div>
+            <div className="flex justify-between"><span>アポ率</span><span className="font-bold">{totals.visits > 0 ? (totals.appointments / totals.visits * 100).toFixed(2) : 0}%</span></div>
+            <div className="flex justify-between"><span>成約率（対アポ）</span><span className="font-bold">{totals.appointments > 0 ? (totals.contracts / totals.appointments * 100).toFixed(1) : 0}%</span></div>
           </div>
         </div>
       </div>
 
-      {/* Monthly trend */}
       <div className="px-4 pb-4">
         <h2 className="text-sm font-bold text-gray-700 mb-2">月別トレンド</h2>
         <div className="space-y-2">
@@ -399,10 +450,7 @@ function PastDataSection({ dailyStats }: { dailyStats: PastDailyStat[] }) {
                   <span className="text-xs text-gray-400">{d.days}日稼働</span>
                 </div>
                 <div className="h-4 bg-gray-100 rounded-full overflow-hidden mb-1">
-                  <div
-                    className="h-full rounded-full bg-blue-400"
-                    style={{ width: `${(d.visits / maxVisits) * 100}%`, minWidth: '4px' }}
-                  />
+                  <div className="h-full rounded-full bg-blue-400" style={{ width: `${(d.visits / maxVisits) * 100}%`, minWidth: '4px' }} />
                 </div>
                 <div className="flex gap-3 text-[10px] text-gray-500">
                   <span>訪問{d.visits}</span>
