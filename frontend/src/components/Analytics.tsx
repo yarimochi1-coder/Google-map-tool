@@ -27,11 +27,21 @@ type DateRange = { start: string; end: string; label: string };
 
 function isDateInRange(dateStr: any, start: string, end: string): boolean {
   if (!dateStr) return false;
-  const s = String(dateStr);
-  const datePart = s.split(' ')[0].split('T')[0].replace(/\//g, '-');
-  const m = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (!m) return false;
-  const padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  let padded: string | null = null;
+  if (dateStr instanceof Date && !isNaN(dateStr.getTime())) {
+    padded = fmtDate(dateStr);
+  } else {
+    const s = String(dateStr);
+    const datePart = s.split(' ')[0].split('T')[0].replace(/\//g, '-');
+    const m = datePart.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) {
+      padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+    } else {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) padded = fmtDate(d);
+    }
+  }
+  if (!padded) return false;
   return padded >= start && padded <= end;
 }
 
@@ -39,19 +49,35 @@ function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function parseHour(dateStr: string): number | null {
-  const m1 = dateStr.match(/\s(\d{1,2}):/);
-  const m2 = dateStr.match(/T(\d{1,2}):/);
+function parseHour(dateStr: any): number | null {
+  // GASがDateオブジェクトで返す場合
+  if (dateStr instanceof Date && !isNaN(dateStr.getTime())) {
+    return dateStr.getHours();
+  }
+  const s = String(dateStr || '');
+  // "2026/4/7 17:12:08" or "2026-04-07T17:12:08"
+  const m1 = s.match(/\s(\d{1,2}):/);
+  const m2 = s.match(/T(\d{1,2}):/);
   if (m1) return parseInt(m1[1]);
   if (m2) return parseInt(m2[1]);
+  // fallback: try Date parse
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.getHours();
   return null;
 }
 
-function parseDow(dateStr: string): number | null {
-  const s = String(dateStr);
+function parseDow(dateStr: any): number | null {
+  if (dateStr instanceof Date && !isNaN(dateStr.getTime())) {
+    return dateStr.getDay();
+  }
+  const s = String(dateStr || '');
+  // try direct parse first
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.getDay();
+  // manual parse
   const datePart = s.split(' ')[0].split('T')[0].replace(/\//g, '-');
-  const d = new Date(datePart);
-  return isNaN(d.getTime()) ? null : d.getDay();
+  const d2 = new Date(datePart);
+  return isNaN(d2.getTime()) ? null : d2.getDay();
 }
 
 // visit_historyをフィルタ（ステータス修正のみ除外。同日再訪問は正当なのでカウント）
@@ -289,7 +315,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       </div>
 
       {/* 時間帯別在宅率 & 対面率 */}
-      {stats.historyCount < 5 && (
+      {stats.historyCount === 0 && (
         <div className="px-4 pb-2">
           <p className="text-xs text-orange-500 bg-orange-50 rounded-lg px-3 py-2">
             ⚠ 訪問履歴が{stats.historyCount}件のみです。時間帯・曜日分析はアプリでステータス変更した訪問のみが対象です。データが蓄積されるほど精度が上がります。
@@ -340,7 +366,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       </div>
 
       {/* 曜日別分析 - 10件以上で表示 */}
-      {stats.historyCount >= 10 && <div className="px-4 pb-4">
+      {stats.historyCount >= 1 && <div className="px-4 pb-4">
         <h2 className="text-sm font-bold text-gray-700 mb-2">曜日別分析 <span className="text-xs font-normal text-gray-400">n={stats.historyCount}</span></h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="divide-y text-[11px]">
@@ -367,7 +393,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       </div>}
 
       {/* 平日 vs 土日 - 10件以上で表示 */}
-      {stats.historyCount >= 10 && <div className="px-4 pb-4">
+      {stats.historyCount >= 1 && <div className="px-4 pb-4">
         <h2 className="text-sm font-bold text-gray-700 mb-2">平日 vs 土日 <span className="text-xs font-normal text-gray-400">n={stats.historyCount}</span></h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="grid grid-cols-2 gap-3">
@@ -393,7 +419,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       </div>}
 
       {/* クロス分析: 曜日×時間帯 - 20件以上で表示 */}
-      {stats.historyCount >= 20 && <div className="px-4 pb-4">
+      {stats.historyCount >= 1 && <div className="px-4 pb-4">
         <h2 className="text-sm font-bold text-gray-700 mb-2">クロス分析（曜日×時間帯）<span className="text-xs font-normal text-gray-400 ml-1">n={stats.historyCount}</span></h2>
         <div className="flex gap-1 mb-2">
           <button onClick={() => setCrossMetric('contact')}
