@@ -2,8 +2,16 @@ import { useState, useMemo } from 'react';
 import type { Property } from '../types';
 import { STATUS_LIST, getStatusConfig } from '../lib/statusConfig';
 
+const ADMIN_NAME = '有持';
+
+// 接触ステータス（不在・絶対無理・施工済み・成約・計測済み・アポ獲得以外）
+const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng'];
+// 対面ステータス
+const FACE_STATUSES = ['instant_return', 'ng'];
+
 interface DashboardProps {
   properties: Property[];
+  userName: string;
   onClose: () => void;
 }
 
@@ -57,7 +65,6 @@ function navigateDate(baseDate: string, period: Period, direction: number): stri
 function isDateInRange(dateStr: any, start: string, end: string): boolean {
   if (!dateStr) return false;
   let padded: string | null = null;
-  // Date object (GAS returns Date for date-formatted cells)
   if (dateStr instanceof Date && !isNaN(dateStr.getTime())) {
     padded = `${dateStr.getFullYear()}-${String(dateStr.getMonth() + 1).padStart(2, '0')}-${String(dateStr.getDate()).padStart(2, '0')}`;
   } else if (typeof dateStr === 'string') {
@@ -66,7 +73,6 @@ function isDateInRange(dateStr: any, start: string, end: string): boolean {
     if (m) {
       padded = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
     } else {
-      // Fallback: native Date parse
       const d = new Date(dateStr);
       if (!isNaN(d.getTime())) {
         padded = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -77,71 +83,86 @@ function isDateInRange(dateStr: any, start: string, end: string): boolean {
   return padded >= start && padded <= end;
 }
 
-export function Dashboard({ properties, onClose }: DashboardProps) {
+function getStaffName(staff: string | undefined): string {
+  return (!staff || staff === '未設定') ? ADMIN_NAME : staff;
+}
+
+export function Dashboard({ properties, userName, onClose }: DashboardProps) {
   const [period, setPeriod] = useState<Period>('day');
   const [baseDate, setBaseDate] = useState(
     new Date().toISOString().split('T')[0]
   );
+  const isAdmin = userName === ADMIN_NAME;
+  const [selectedStaff, setSelectedStaff] = useState<string>('all');
 
   const range = useMemo(() => getDateRange(baseDate, period), [baseDate, period]);
 
+  // 全担当者リスト（管理者用）
+  const allStaff = useMemo(() => {
+    const set = new Set<string>();
+    properties.forEach((p) => set.add(getStaffName(p.staff)));
+    return Array.from(set).sort();
+  }, [properties]);
+
   const stats = useMemo(() => {
-    // Exclude '施工済み' and '成約' from visit counts
-    const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
-    // 訪問日 (last_visit_date) が空ならピン作成日 (created_at)。両方空なら今日扱い。
+    // 担当者フィルタ
+    const filtered = isAdmin
+      ? (selectedStaff === 'all' ? properties : properties.filter((p) => getStaffName(p.staff) === selectedStaff))
+      : properties.filter((p) => getStaffName(p.staff) === userName);
+
+    // 施工済み・成約を除外して訪問対象
+    const visitProps = filtered.filter((p) => p.status !== 'completed' && p.status !== 'contract');
     const todayStr = new Date().toISOString().split('T')[0];
     const periodVisits = visitProps.filter((p) => {
       const dateRef = p.last_visit_date || p.created_at;
-      if (!dateRef) {
-        // 日付データが欠けているピンは今日のものとして扱う
-        return range.start <= todayStr && todayStr <= range.end;
-      }
+      if (!dateRef) return range.start <= todayStr && todayStr <= range.end;
       return isDateInRange(dateRef, range.start, range.end);
     });
-    const periodCreated = visitProps.filter((p) =>
-      isDateInRange(p.created_at, range.start, range.end)
-    );
 
-    const statusCounts = STATUS_LIST.map((s) => ({
-      ...s,
-      count: properties.filter((p) => p.status === s.key).length,
-      periodCount: periodVisits.filter((p) => p.status === s.key).length,
-    }));
+    // KPI計算
+    const contacts = periodVisits.filter((p) => CONTACT_STATUSES.includes(p.status)).length;
+    const faceToFace = periodVisits.filter((p) => FACE_STATUSES.includes(p.status)).length;
+    const talkCount = periodVisits.filter((p) => p.status === 'ng').length;
+    const measured = periodVisits.filter((p) => p.status === 'measured').length;
+    const appointments = periodVisits.filter((p) => p.status === 'appointment').length;
 
-    // 期間内訪問のステータス内訳（その日詳細用）
+    // 期間内のステータス内訳
     const periodStatusBreakdown = STATUS_LIST.map((s) => ({
       ...s,
       count: periodVisits.filter((p) => p.status === s.key).length,
     })).filter((s) => s.count > 0);
 
-    const totalPins = properties.length;
+    const statusCounts = STATUS_LIST.map((s) => ({
+      ...s,
+      count: filtered.filter((p) => p.status === s.key).length,
+      periodCount: periodVisits.filter((p) => p.status === s.key).length,
+    }));
+
+    const totalPins = filtered.length;
     const maxCount = Math.max(...statusCounts.map((s) => s.count), 1);
 
-    // Staff breakdown for the period
+    // 担当者別（管理者の全員表示時のみ）
     const staffMap: Record<string, number> = {};
     for (const p of periodVisits) {
-      const name = p.staff || '未設定';
+      const name = getStaffName(p.staff);
       staffMap[name] = (staffMap[name] || 0) + 1;
     }
-    const staffBreakdown = Object.entries(staffMap)
-      .sort((a, b) => b[1] - a[1]);
-
-    // 成約とアポはperiod内で別途集計（visitPropsには含まれていない）
-    const periodAppos = properties.filter((p) => p.status === 'appointment' && isDateInRange(p.last_visit_date, range.start, range.end)).length;
-    const periodContracts = properties.filter((p) => p.status === 'contract' && isDateInRange(p.last_visit_date, range.start, range.end)).length;
+    const staffBreakdown = Object.entries(staffMap).sort((a, b) => b[1] - a[1]);
 
     return {
       periodVisits: periodVisits.length,
-      periodCreated: periodCreated.length,
-      appointments: periodAppos,
-      contracts: periodContracts,
+      contacts,
+      faceToFace,
+      talkCount,
+      measured,
+      appointments,
       statusCounts,
       periodStatusBreakdown,
       totalPins,
       maxCount,
       staffBreakdown,
     };
-  }, [properties, range]);
+  }, [properties, range, isAdmin, selectedStaff, userName]);
 
   const periodLabels: Record<Period, string> = { day: '日', week: '週', month: '月' };
 
@@ -150,7 +171,10 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
       {/* Header */}
       <div className="bg-white shadow-sm sticky top-0 z-10">
         <div className="flex items-center justify-between px-4 py-3">
-          <h1 className="text-lg font-bold">ダッシュボード</h1>
+          <div>
+            <h1 className="text-lg font-bold">ダッシュボード</h1>
+            <p className="text-xs text-gray-400">{userName}{isAdmin ? '（管理者）' : ''}</p>
+          </div>
           <button
             onClick={onClose}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 text-gray-600 text-xl"
@@ -158,6 +182,22 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
             ×
           </button>
         </div>
+
+        {/* 管理者用: 担当者切り替え */}
+        {isAdmin && (
+          <div className="px-4 pb-2">
+            <select
+              value={selectedStaff}
+              onChange={(e) => setSelectedStaff(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm font-bold bg-white"
+            >
+              <option value="all">全担当者</option>
+              {allStaff.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Period tabs */}
         <div className="flex gap-1 px-4 pb-2">
@@ -196,23 +236,31 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
         </div>
       </div>
 
-      {/* Summary cards */}
+      {/* Summary cards - 6枚 */}
       <div className="grid grid-cols-2 gap-3 p-4">
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-500">訪問数</p>
           <p className="text-3xl font-bold text-blue-600">{stats.periodVisits}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-xs text-gray-500">新規ピン</p>
-          <p className="text-3xl font-bold text-green-600">{stats.periodCreated}</p>
+          <p className="text-xs text-gray-500">接触数</p>
+          <p className="text-3xl font-bold text-green-600">{stats.contacts}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-xs text-gray-500">アポ獲得</p>
-          <p className="text-3xl font-bold text-yellow-600">{stats.appointments}</p>
+          <p className="text-xs text-gray-500">対面数</p>
+          <p className="text-3xl font-bold text-orange-500">{stats.faceToFace}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm">
-          <p className="text-xs text-gray-500">成約</p>
-          <p className="text-3xl font-bold text-red-600">{stats.contracts}</p>
+          <p className="text-xs text-gray-500">話し込み数</p>
+          <p className="text-3xl font-bold text-purple-600">{stats.talkCount}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm">
+          <p className="text-xs text-gray-500">計測数</p>
+          <p className="text-3xl font-bold text-yellow-600">{stats.measured}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm">
+          <p className="text-xs text-gray-500">アポ獲得数</p>
+          <p className="text-3xl font-bold text-red-600">{stats.appointments}</p>
         </div>
       </div>
 
@@ -233,8 +281,8 @@ export function Dashboard({ properties, onClose }: DashboardProps) {
         </div>
       )}
 
-      {/* Staff breakdown */}
-      {stats.staffBreakdown.length > 0 && (
+      {/* Staff breakdown (管理者の全員表示時) */}
+      {isAdmin && selectedStaff === 'all' && stats.staffBreakdown.length > 0 && (
         <div className="px-4 pb-4">
           <h2 className="text-sm font-bold text-gray-700 mb-2">担当者別</h2>
           <div className="bg-white rounded-xl shadow-sm divide-y">

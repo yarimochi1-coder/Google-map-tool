@@ -13,6 +13,7 @@ import { useUserName } from './hooks/useUserName';
 import { useGeolocation } from './hooks/useGeolocation';
 import { useLayerPins } from './hooks/useLayerPins';
 import { LayerPinDetail } from './components/LayerPinDetail';
+import { NameInputModal } from './components/NameInputModal';
 
 type View = 'map' | 'dashboard' | 'analytics' | 'plan';
 
@@ -88,6 +89,11 @@ export default function App() {
     ? properties.find((p) => p.id === selectedProperty.id) ?? selectedProperty
     : null;
 
+  // 名前未入力なら入力モーダルを表示
+  if (!userName) {
+    return <NameInputModal onSubmit={setUserName} />;
+  }
+
   return (
     <div className="h-dvh w-full flex flex-col overflow-hidden bg-gray-100">
       {/* Main content */}
@@ -107,6 +113,7 @@ export default function App() {
         ) : view === 'dashboard' ? (
           <Dashboard
             properties={properties}
+            userName={userName}
             onClose={() => setView('map')}
           />
         ) : view === 'analytics' ? (
