@@ -16,8 +16,11 @@ interface AnalyticsProps {
   onClose: () => void;
 }
 
-const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng'];
-const FACE_STATUSES = ['instant_return', 'ng'];
+// 接触 = 不在以外（誰かが応答した）。施工済み・成約はfilterHistoryで除外済み
+// ファネル用の接触（Dashboard定義）
+const CONTACT_STATUSES_FUNNEL = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng'];
+// 対面 = 実際に顔を合わせた（計測・アポも対面を経由している）
+const FACE_STATUSES = ['instant_return', 'ng', 'measured', 'appointment', 'impossible'];
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
 type DateRange = { start: string; end: string; label: string };
@@ -51,18 +54,12 @@ function parseDow(dateStr: string): number | null {
   return isNaN(d.getTime()) ? null : d.getDay();
 }
 
-// visit_historyをフィルタ（ステータス修正除外、同日同物件重複除外）
+// visit_historyをフィルタ（ステータス修正のみ除外。同日再訪問は正当なのでカウント）
 function filterHistory(history: VisitRecord[], dateRange: DateRange | null): VisitRecord[] {
-  const visitedKey = new Set<string>();
   return history.filter((r) => {
     if (r.memo === 'ステータス修正') return false;
     if (r.status === 'completed' || r.status === 'contract') return false;
     if (dateRange && !isDateInRange(r.visited_at, dateRange.start, dateRange.end)) return false;
-    const dateStr = String(r.visited_at || '');
-    const datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
-    const key = `${r.property_id}_${datePart}`;
-    if (visitedKey.has(key)) return false;
-    visitedKey.add(key);
     return true;
   });
 }
@@ -109,7 +106,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
 
     const visitProps = filtered.filter((p) => p.status !== 'completed' && p.status !== 'contract');
     const totalVisits = visitProps.length;
-    const contacts = visitProps.filter((p) => CONTACT_STATUSES.includes(p.status)).length;
+    const contacts = visitProps.filter((p) => CONTACT_STATUSES_FUNNEL.includes(p.status)).length;
     const faceToFace = visitProps.filter((p) => FACE_STATUSES.includes(p.status)).length;
     const talkCount = visitProps.filter((p) => p.status === 'ng').length;
     const measured = filtered.filter((p) => p.status === 'measured').length;
@@ -145,7 +142,9 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       const h = parseHour(String(r.visited_at || ''));
       if (h !== null && hourly[h] !== undefined) {
         hourly[h].total++;
+        // 在宅 = 不在以外すべて（誰かが応答した）
         if (r.status !== 'absent') hourly[h].contacted++;
+        // 対面 = 実際に顔を合わせた（インターホン越し・子供対応は除く）
         if (FACE_STATUSES.includes(r.status)) hourly[h].faced++;
       }
     });
@@ -164,7 +163,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       }
     });
 
-    // 平日 vs 土日祝
+    // 平日 vs 土日
     const weekday = { total: 0, contacted: 0, faced: 0 };
     const weekend = { total: 0, contacted: 0, faced: 0 };
     fh.forEach((r) => {
@@ -200,7 +199,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       const s = p.staff || '未設定';
       if (!staffMap[s]) staffMap[s] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
       staffMap[s].visits++;
-      if (CONTACT_STATUSES.includes(p.status)) staffMap[s].contacts++;
+      if (CONTACT_STATUSES_FUNNEL.includes(p.status)) staffMap[s].contacts++;
       if (p.status === 'appointment') staffMap[s].appos++;
     });
     filtered.filter((p) => p.status === 'contract').forEach((p) => {
