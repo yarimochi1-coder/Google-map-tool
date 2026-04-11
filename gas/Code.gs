@@ -253,11 +253,19 @@ function getAllProperties() {
   var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
   var headers = data[0];
+  var dateColumns = ['last_visit_date', 'created_at', 'updated_at'];
+  var dateCols = dateColumns.map(function(h) { return headers.indexOf(h); });
+  var tz = Session.getScriptTimeZone();
   var results = [];
   for (var i = 1; i < data.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+      var val = data[i][j];
+      // 日付カラムがDateオブジェクトの場合、JST文字列に変換
+      if (dateCols.indexOf(j) !== -1 && val instanceof Date) {
+        val = Utilities.formatDate(val, tz, 'yyyy/MM/dd HH:mm:ss');
+      }
+      obj[headers[j]] = val;
     }
     obj.lat = Number(obj.lat);
     obj.lng = Number(obj.lng);
@@ -407,11 +415,17 @@ function getHistory(propertyId) {
   var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
   var headers = data[0];
+  var visitedAtCol = headers.indexOf('visited_at');
   var results = [];
   for (var i = 1; i < data.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+      var val = data[i][j];
+      // visited_at がDateオブジェクトの場合、JSTの文字列に変換（UTC変換を防ぐ）
+      if (j === visitedAtCol && val instanceof Date) {
+        val = Utilities.formatDate(val, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm:ss');
+      }
+      obj[headers[j]] = val;
     }
     if (!propertyId || obj.property_id === propertyId) {
       results.push(obj);
