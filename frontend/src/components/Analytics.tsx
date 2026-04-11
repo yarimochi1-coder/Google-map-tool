@@ -80,12 +80,28 @@ function parseDow(dateStr: any): number | null {
   return isNaN(d2.getTime()) ? null : d2.getDay();
 }
 
-// visit_historyをフィルタ（ステータス修正のみ除外。同日再訪問は正当なのでカウント）
+// visit_historyをフィルタ
+// 同日同物件は1回だけカウント（ステータス修正や重複を除外）
+// ただし memo='再訪問' は明示的な再訪問なのでカウント
 function filterHistory(history: VisitRecord[], dateRange: DateRange | null): VisitRecord[] {
+  const visitedKey = new Set<string>();
   return history.filter((r) => {
     if (r.memo === 'ステータス修正') return false;
     if (r.status === 'completed' || r.status === 'contract') return false;
     if (dateRange && !isDateInRange(r.visited_at, dateRange.start, dateRange.end)) return false;
+    // 再訪問ボタンで追加した記録は常にカウント
+    if (r.memo === '再訪問') return true;
+    // 同日同物件の重複を除外（最初の1件だけ残す）
+    const dateStr = String(r.visited_at || '');
+    let datePart: string;
+    if ((r.visited_at as any) instanceof Date) {
+      datePart = fmtDate(r.visited_at as any);
+    } else {
+      datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
+    }
+    const key = `${r.property_id}_${datePart}`;
+    if (visitedKey.has(key)) return false;
+    visitedKey.add(key);
     return true;
   });
 }
