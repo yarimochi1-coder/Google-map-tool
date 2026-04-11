@@ -199,10 +199,18 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     };
   }, [properties, range, period]);
 
-  // Today's visit list (always uses current properties regardless of period)
+  // Today's visit list: 再訪問日が今日に設定されている物件のみ
   const todayList = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+
     const revisitList = properties
-      .filter((p) => p.revisit && p.status !== 'contract' && p.status !== 'completed' && p.status !== 'impossible')
+      .filter((p) => {
+        if (!p.revisit) return false;
+        if (p.status === 'contract' || p.status === 'completed' || p.status === 'impossible') return false;
+        // revisit の日付部分が今日と一致
+        const revisitDate = p.revisit.split('T')[0];
+        return revisitDate === todayStr;
+      })
       .map((p) => ({
         ...p,
         priority: 1,
@@ -211,17 +219,7 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
       }));
     revisitList.sort((a, b) => a.distance - b.distance);
 
-    const hotLeads = properties
-      .filter((p) => !p.revisit && (p.status === 'measured' || p.status === 'ng'))
-      .map((p) => ({
-        ...p,
-        priority: 2,
-        reason: p.status === 'measured' ? 'アポ取り推奨' : '話し込み済み・フォロー推奨',
-        distance: userPosition ? getDistance(userPosition.lat, userPosition.lng, p.lat, p.lng) : 0,
-      }));
-    hotLeads.sort((a, b) => a.distance - b.distance);
-
-    return [...revisitList, ...hotLeads];
+    return revisitList;
   }, [properties, userPosition]);
 
   function getRevisitReason(p: Property): string {

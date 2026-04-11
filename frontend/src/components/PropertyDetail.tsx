@@ -31,6 +31,12 @@ export function PropertyDetail({
   const [isEditing, setIsEditing] = useState(false);
   const [history, setHistory] = useState<VisitRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showRevisitPicker, setShowRevisitPicker] = useState(false);
+  const [revisitDate, setRevisitDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  });
 
   // 訪問履歴を取得
   useEffect(() => {
@@ -80,6 +86,20 @@ export function PropertyDetail({
     });
     setIsEditing(false);
   };
+
+  function formatRevisitDate(dateStr: string): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const dateOnly = d.toISOString().split('T')[0];
+    if (dateOnly === todayStr) return '今日';
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    if (dateOnly === tomorrow.toISOString().split('T')[0]) return '明日';
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
 
   const statusConfig = getStatusConfig(property.status);
 
@@ -141,8 +161,13 @@ export function PropertyDetail({
         </button>
         <button
           onClick={() => {
-            const isRevisit = !!property.revisit;
-            onUpdate(property.id, { revisit: isRevisit ? '' : new Date().toISOString() });
+            if (property.revisit) {
+              // 解除
+              onUpdate(property.id, { revisit: '' });
+            } else {
+              // 日付選択
+              setShowRevisitPicker(true);
+            }
           }}
           className={`py-3 px-4 rounded-xl font-bold text-sm ${
             property.revisit
@@ -150,7 +175,7 @@ export function PropertyDetail({
               : 'bg-orange-50 text-orange-500 border border-orange-300 active:bg-orange-100'
           }`}
         >
-          {property.revisit ? '再訪問 ✓' : '再訪問'}
+          {property.revisit ? `再訪問 ${formatRevisitDate(property.revisit)}` : '再訪問'}
         </button>
         <button
           onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
@@ -163,6 +188,61 @@ export function PropertyDetail({
           {isEditing ? '保存' : '編集'}
         </button>
       </div>
+
+      {/* Revisit date picker */}
+      {showRevisitPicker && (
+        <div className="px-4 py-2">
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3">
+            <p className="text-xs font-bold text-orange-700 mb-2">再訪問日を設定</p>
+            <div className="flex gap-2 mb-2">
+              {[
+                { label: '今日', days: 0 },
+                { label: '明日', days: 1 },
+                { label: '3日後', days: 3 },
+                { label: '1週間後', days: 7 },
+              ].map((opt) => {
+                const d = new Date();
+                d.setDate(d.getDate() + opt.days);
+                const val = d.toISOString().split('T')[0];
+                return (
+                  <button
+                    key={opt.label}
+                    onClick={() => setRevisitDate(val)}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold ${
+                      revisitDate === val ? 'bg-orange-500 text-white' : 'bg-white text-orange-500 border border-orange-300'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="date"
+              value={revisitDate}
+              onChange={(e) => setRevisitDate(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm mb-2"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowRevisitPicker(false)}
+                className="flex-1 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-500"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => {
+                  onUpdate(property.id, { revisit: revisitDate + 'T00:00:00' });
+                  setShowRevisitPicker(false);
+                }}
+                className="flex-1 py-2 rounded-lg text-sm font-bold bg-orange-500 text-white"
+              >
+                設定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit fields */}
       {isEditing && (
