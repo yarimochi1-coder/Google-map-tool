@@ -1,7 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import type { Property } from '../types';
 import { STATUS_LIST } from '../lib/statusConfig';
 import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
+import { gasGet } from '../lib/gasClient';
+
+interface VisitRecord {
+  property_id: string;
+  status: string;
+  staff: string;
+  visited_at: string;
+  memo: string;
+}
 
 interface AnalyticsProps {
   properties: Property[];
@@ -9,6 +18,14 @@ interface AnalyticsProps {
 }
 
 export function Analytics({ properties, onClose }: AnalyticsProps) {
+  // visit_history をGASから取得（時間帯別分析用）
+  const [visitHistory, setVisitHistory] = useState<VisitRecord[]>([]);
+  useEffect(() => {
+    gasGet<VisitRecord[]>('history').then((res) => {
+      if (res.success && res.data) setVisitHistory(res.data);
+    }).catch(() => {});
+  }, []);
+
   const stats = useMemo(() => {
     // Exclude '施工済み' and '成約' from visit-related stats
     const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
@@ -37,23 +54,34 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     ];
     const overallRate = total > 0 ? (successTotal / total * 100).toFixed(1) : '0';
 
-    // Hourly analysis
+    // Hourly analysis (visit_historyから正確な訪問時刻を使用)
     const hourly: Record<number, { total: number; contacted: number; appo: number }> = {};
     for (let h = 7; h <= 21; h++) hourly[h] = { total: 0, contacted: 0, appo: 0 };
 
-    visitProps.forEach((p) => {
-      // last_visit_date が空なら created_at から時刻を取得
-      const dateStr = p.last_visit_date || p.created_at || '';
-      // "2026/4/7 17:12:08" or ISO "2026-04-07T17:12:08" を両方対応
+    // ステータス修正の重複を除外（同一property_id+同日で最初のレコードだけカウント）
+    const visitedKey = new Set<string>();
+    const filteredHistory = visitHistory.filter((r) => {
+      if (r.memo === 'ステータス修正') return false; // 修正は除外
+      if (r.status === 'completed' || r.status === 'contract') return false;
+      const dateStr = String(r.visited_at || '');
+      const datePart = dateStr.split(' ')[0].split('T')[0].replace(/\//g, '-');
+      const key = `${r.property_id}_${datePart}`;
+      if (visitedKey.has(key)) return false;
+      visitedKey.add(key);
+      return true;
+    });
+
+    filteredHistory.forEach((r) => {
+      const dateStr = String(r.visited_at || '');
       let h: number | null = null;
-      const m1 = dateStr.match(/\s(\d{1,2}):/);  // スペース後の時刻
-      const m2 = dateStr.match(/T(\d{1,2}):/);   // ISO形式
+      const m1 = dateStr.match(/\s(\d{1,2}):/);
+      const m2 = dateStr.match(/T(\d{1,2}):/);
       if (m1) h = parseInt(m1[1]);
       else if (m2) h = parseInt(m2[1]);
       if (h !== null && hourly[h]) {
         hourly[h].total++;
-        if (p.status !== 'absent') hourly[h].contacted++;
-        if (p.status === 'appointment' || p.status === 'contract') hourly[h].appo++;
+        if (r.status !== 'absent') hourly[h].contacted++;
+        if (r.status === 'appointment') hourly[h].appo++;
       }
     });
 
@@ -120,7 +148,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       avgVisits, avgAmount,
       staffList, sc,
     };
-  }, [properties]);
+  }, [properties, visitHistory]);
 
   if (!stats) {
     return (

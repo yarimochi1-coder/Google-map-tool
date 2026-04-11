@@ -126,15 +126,24 @@ export function useProperties() {
   const updateStatus = useCallback(
     async (id: string, status: PropertyStatus) => {
       const now = new Date().toLocaleString('ja-JP');
+      const todayStr = new Date().toISOString().split('T')[0];
       const prop = properties.find((p) => p.id === id);
+
+      // 同日にすでに訪問記録済みならvisit_countを増やさない（ステータス修正扱い）
+      const lastDate = prop?.last_visit_date || '';
+      const lastDatePart = lastDate.split(' ')[0].split('T')[0].replace(/\//g, '-');
+      const alreadyVisitedToday = lastDatePart === todayStr;
+
       await updateProperty(id, {
         status,
         staff: getStaff(),
         last_visit_date: now,
-        visit_count: (prop?.visit_count ?? 0) + 1,
+        visit_count: alreadyVisitedToday
+          ? (prop?.visit_count ?? 0)
+          : (prop?.visit_count ?? 0) + 1,
       });
-      // Log to visit history
-      await logVisit(id, status);
+      // 同日修正でもhistoryには記録（分析用）
+      await logVisit(id, status, alreadyVisitedToday ? 'ステータス修正' : '');
     },
     [updateProperty, logVisit, properties]
   );
