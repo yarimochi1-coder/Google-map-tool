@@ -5,7 +5,7 @@ import { STATUS_LIST, getStatusConfig } from '../lib/statusConfig';
 const ADMIN_NAME = '有持';
 
 // 接触ステータス（不在・絶対無理・施工済み・成約・計測済み・アポ獲得以外）
-const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng'];
+const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible'];
 // 対面ステータス
 const FACE_STATUSES = ['instant_return', 'ng'];
 

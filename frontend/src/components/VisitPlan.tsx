@@ -196,23 +196,33 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     // Exclude '施工済み' and '成約' from visit counts
     const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
 
-    // Filter properties whose last_visit_date falls in range
+    // Filter properties whose visit date falls in range (last_visit_date → created_at → 今日)
     const inRange = visitProps.filter((p) => {
-      const d = parseDate(p.last_visit_date);
+      const dateRef = p.last_visit_date || p.created_at;
+      if (!dateRef) {
+        // 日付なし → 今日扱い
+        const now = new Date();
+        return now >= range.start && now <= range.end;
+      }
+      const d = parseDate(dateRef);
       if (!d) return false;
       return d >= range.start && d <= range.end;
     });
 
-    // Count by status
+    // Count by status (Dashboard定義と一致させる)
+    const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible'];
+    const FACE_STATUSES = ['instant_return', 'ng'];
     const visits = inRange.length;
-    const interphone = inRange.filter((p) => p.status === 'interphone' || p.status === 'child' || p.status === 'grandmother' || p.status === 'grandfather' || p.status === 'ng' || p.status === 'instant_return').length;
-    const faceToFace = inRange.filter((p) => p.status !== 'absent' && p.status !== 'interphone').length;
+    const interphone = inRange.filter((p) => CONTACT_STATUSES.includes(p.status)).length;
+    const faceToFace = inRange.filter((p) => FACE_STATUSES.includes(p.status)).length;
     const measurements = inRange.filter((p) => p.status === 'measured').length;
     const appointments = inRange.filter((p) => p.status === 'appointment').length;
     // 成約はvisitPropsに含まれていないので別途集計
     const contracts = properties.filter((p) => {
       if (p.status !== 'contract') return false;
-      const d = parseDate(p.last_visit_date);
+      const dateRef = p.last_visit_date || p.created_at;
+      if (!dateRef) return new Date() >= range.start && new Date() <= range.end;
+      const d = parseDate(dateRef);
       return d && d >= range.start && d <= range.end;
     }).length;
 
