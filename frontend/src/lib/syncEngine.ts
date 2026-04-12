@@ -81,7 +81,15 @@ export async function fullSync(): Promise<Property[]> {
     (p) => !serverIds.has(p.id) && pendingCreateIds.has(p.id)
   );
 
-  const merged = [...serverData, ...localOnlyRecords];
+  // IDベースで重複除外（サーバー側を優先、ローカルのみのcreate待ちを追加）
+  const mergedMap = new Map<string, Property>();
+  for (const p of serverData) {
+    if (p.id) mergedMap.set(p.id, p);
+  }
+  for (const p of localOnlyRecords) {
+    if (p.id && !mergedMap.has(p.id)) mergedMap.set(p.id, p);
+  }
+  const merged = Array.from(mergedMap.values());
   await putAllProperties(merged);
   await setMeta('lastSyncTime', new Date().toISOString());
   return merged;

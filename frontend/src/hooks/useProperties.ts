@@ -15,7 +15,7 @@ export function useProperties() {
   useEffect(() => {
     (async () => {
       const local = await db.getAllProperties();
-      setProperties(local);
+      setProperties(dedup(local));
       const pending = await db.getAllSyncQueue();
       setPendingCount(pending.length);
       const lastSync = await db.getMeta('lastSyncTime');
@@ -23,13 +23,21 @@ export function useProperties() {
     })();
   }, []);
 
+  const dedup = (props: Property[]): Property[] => {
+    const map = new Map<string, Property>();
+    for (const p of props) {
+      if (p.id) map.set(p.id, p);
+    }
+    return Array.from(map.values());
+  };
+
   const doSync = useCallback(async () => {
     if (!isOnline) return;
     setIsSyncing(true);
     try {
       await processQueue();
       const serverData = await fullSync();
-      setProperties(serverData);
+      setProperties(dedup(serverData));
       const pending = await db.getAllSyncQueue();
       setPendingCount(pending.length);
       setLastSyncTime(new Date().toISOString());

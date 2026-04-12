@@ -253,15 +253,30 @@ function getAllProperties() {
   var data = sheet.getDataRange().getValues();
   if (data.length <= 1) return [];
   var headers = data[0];
+  var idCol = headers.indexOf('id');
+  var updatedCol = headers.indexOf('updated_at');
   var dateColumns = ['last_visit_date', 'created_at', 'updated_at'];
   var dateCols = dateColumns.map(function(h) { return headers.indexOf(h); });
   var tz = Session.getScriptTimeZone();
-  var results = [];
+
+  // IDごとに最新のupdated_atを持つ行だけ残す（重複除外）
+  var bestRows = {};
   for (var i = 1; i < data.length; i++) {
+    var id = data[i][idCol];
+    if (!id) continue;
+    var u = String(data[i][updatedCol] || '');
+    if (!bestRows[id] || u > bestRows[id].u) {
+      bestRows[id] = { row: data[i], u: u };
+    }
+  }
+
+  var results = [];
+  var ids = Object.keys(bestRows);
+  for (var k = 0; k < ids.length; k++) {
+    var row = bestRows[ids[k]].row;
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      var val = data[i][j];
-      // 日付カラムがDateオブジェクトの場合、JST文字列に変換
+      var val = row[j];
       if (dateCols.indexOf(j) !== -1 && val instanceof Date) {
         val = Utilities.formatDate(val, tz, 'yyyy/MM/dd HH:mm:ss');
       }
@@ -377,7 +392,9 @@ function updateProperty(data) {
       return data;
     }
   }
-  return createProperty(data);
+  // IDが見つからない場合、重複防止のためそのまま返す（createしない）
+  Logger.log('updateProperty: ID not found, skipping create to prevent duplicates: ' + data.id);
+  return data;
 }
 
 function deleteProperty(id) {
