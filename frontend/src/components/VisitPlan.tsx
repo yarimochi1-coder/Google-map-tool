@@ -196,14 +196,10 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     // Exclude '施工済み' and '成約' from visit counts
     const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
 
-    // Filter properties whose visit date falls in range (last_visit_date → created_at → 今日)
+    // Filter properties whose visit date falls in range
     const inRange = visitProps.filter((p) => {
       const dateRef = p.last_visit_date || p.created_at;
-      if (!dateRef) {
-        // 日付なし → 今日扱い
-        const now = new Date();
-        return now >= range.start && now <= range.end;
-      }
+      if (!dateRef) return false;
       const d = parseDate(dateRef);
       if (!d) return false;
       return d >= range.start && d <= range.end;
@@ -221,7 +217,7 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
     const contracts = properties.filter((p) => {
       if (p.status !== 'contract') return false;
       const dateRef = p.last_visit_date || p.created_at;
-      if (!dateRef) return new Date() >= range.start && new Date() <= range.end;
+      if (!dateRef) return false;
       const d = parseDate(dateRef);
       return d && d >= range.start && d <= range.end;
     }).length;

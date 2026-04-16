@@ -112,10 +112,9 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
 
     // 施工済み・成約を除外して訪問対象
     const visitProps = filtered.filter((p) => p.status !== 'completed' && p.status !== 'contract');
-    const todayStr = new Date().toISOString().split('T')[0];
     const periodVisits = visitProps.filter((p) => {
       const dateRef = p.last_visit_date || p.created_at;
-      if (!dateRef) return range.start <= todayStr && todayStr <= range.end;
+      if (!dateRef) return false;
       return isDateInRange(dateRef, range.start, range.end);
     });
 
