@@ -358,10 +358,113 @@ function dedupeProperties() {
   return removed;
 }
 
+// Utility: 同じ座標の重複物件を統合し、visit_historyのproperty_idも付け替える
+function dedupeByLocation() {
+  var sheet = getSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 'No data';
+  var headers = data[0];
+  var idCol = headers.indexOf('id');
+  var latCol = headers.indexOf('lat');
+  var lngCol = headers.indexOf('lng');
+  var updatedCol = headers.indexOf('updated_at');
+  var visitCountCol = headers.indexOf('visit_count');
+
+  // lat_lng をキーにして、最新の updated_at を持つ行を残す
+  var bestByLoc = {};
+  var idMapping = {}; // oldId -> newId
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var id = row[idCol];
+    if (!id) continue;
+    var lat = String(Number(row[latCol]).toFixed(7));
+    var lng = String(Number(row[lngCol]).toFixed(7));
+    var locKey = lat + '_' + lng;
+    var u = String(row[updatedCol] || '');
+
+    if (!bestByLoc[locKey]) {
+      bestByLoc[locKey] = { row: row, id: id, u: u, totalVisits: Number(row[visitCountCol]) || 0 };
+    } else {
+      // 新しい方を残す
+      bestByLoc[locKey].totalVisits += Number(row[visitCountCol]) || 0;
+      if (u > bestByLoc[locKey].u) {
+        idMapping[bestByLoc[locKey].id] = id; // 古いIDを新しいIDにマッピング
+        bestByLoc[locKey].row = row;
+        bestByLoc[locKey].id = id;
+        bestByLoc[locKey].u = u;
+      } else {
+        idMapping[id] = bestByLoc[locKey].id; // このIDを勝者にマッピング
+      }
+    }
+  }
+
+  // visit_countを統合（最大値を採用）
+  var keptRows = [];
+  var locKeys = Object.keys(bestByLoc);
+  for (var k = 0; k < locKeys.length; k++) {
+    var entry = bestByLoc[locKeys[k]];
+    entry.row[visitCountCol] = entry.totalVisits;
+    keptRows.push(entry.row);
+  }
+
+  // propertiesシート書き直し
+  sheet.clearContents();
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  if (keptRows.length > 0) {
+    sheet.getRange(2, 1, keptRows.length, headers.length).setValues(keptRows);
+  }
+
+  // visit_historyのproperty_idを付け替え
+  var histSheet = getHistorySheet();
+  var histData = histSheet.getDataRange().getValues();
+  if (histData.length > 1) {
+    var histHeaders = histData[0];
+    var histPidCol = histHeaders.indexOf('property_id');
+    var remapped = 0;
+    for (var i = 1; i < histData.length; i++) {
+      var oldPid = histData[i][histPidCol];
+      if (idMapping[oldPid]) {
+        histSheet.getRange(i + 1, histPidCol + 1).setValue(idMapping[oldPid]);
+        remapped++;
+      }
+    }
+    Logger.log('Remapped ' + remapped + ' visit_history records');
+  }
+
+  var removed = (data.length - 1) - keptRows.length;
+  Logger.log('dedupeByLocation: Kept ' + keptRows.length + ', removed ' + removed + ', remapped ' + Object.keys(idMapping).length + ' IDs');
+  return 'Kept ' + keptRows.length + ', removed ' + removed;
+}
+
 function createProperty(data) {
   var sheet = getSheet();
   var id = data.id || Utilities.getUuid();
   var now = new Date().toISOString();
+
+  // 同じIDまたは同じ座標の既存物件がある場合はupdateにフォールバック
+  var allData = sheet.getDataRange().getValues();
+  if (allData.length > 1) {
+    var headers = allData[0];
+    var idCol = headers.indexOf('id');
+    var latCol = headers.indexOf('lat');
+    var lngCol = headers.indexOf('lng');
+    for (var i = 1; i < allData.length; i++) {
+      if (allData[i][idCol] === id) {
+        // 同じIDが既にある → updateに切り替え
+        data.id = id;
+        return updateProperty(data);
+      }
+      if (data.lat && data.lng &&
+          Number(allData[i][latCol]).toFixed(6) === Number(data.lat).toFixed(6) &&
+          Number(allData[i][lngCol]).toFixed(6) === Number(data.lng).toFixed(6)) {
+        // 同じ座標 → 既存を更新
+        data.id = allData[i][idCol];
+        return updateProperty(data);
+      }
+    }
+  }
+
   var row = HEADERS.map(function(h) {
     if (h === 'id') return id;
     if (h === 'created_at') return data.created_at || now;
