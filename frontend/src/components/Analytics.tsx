@@ -18,7 +18,8 @@ interface AnalyticsProps {
 
 // 接触 = 不在以外（誰かが応答した）。施工済み・成約はfilterHistoryで除外済み
 // ファネル用の接触（Dashboard定義）
-const CONTACT_STATUSES_FUNNEL = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng'];
+// Dashboard と統一（絶対無理も接触扱い）
+const CONTACT_STATUSES_FUNNEL = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible'];
 // 対面 = 実際に顔を合わせた（計測・アポも対面を経由している）
 const FACE_STATUSES = ['instant_return', 'ng', 'measured', 'appointment', 'impossible'];
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];

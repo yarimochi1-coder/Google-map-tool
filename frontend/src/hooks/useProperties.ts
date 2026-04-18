@@ -58,8 +58,14 @@ export function useProperties() {
     };
   }, [isOnline, doSync]);
 
+  const triggerSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggerSync = useCallback(() => {
-    if (isOnline) processQueue().then(() => db.getAllSyncQueue().then((q) => setPendingCount(q.length)));
+    if (!isOnline) return;
+    // 1秒以内の連続呼び出しを1回にまとめる
+    if (triggerSyncTimeoutRef.current) clearTimeout(triggerSyncTimeoutRef.current);
+    triggerSyncTimeoutRef.current = setTimeout(() => {
+      processQueue().then(() => db.getAllSyncQueue().then((q) => setPendingCount(q.length)));
+    }, 1000);
   }, [isOnline]);
 
   const getStaff = () => localStorage.getItem('paint-map-username') ?? '';
@@ -175,6 +181,14 @@ export function useProperties() {
   );
 
   const clearAllLocal = useCallback(async () => {
+    // 未同期データがある場合は警告
+    const pending = await db.getAllSyncQueue();
+    if (pending.length > 0) {
+      const confirmed = window.confirm(
+        `未同期のデータが${pending.length}件あります。削除するとサーバーに反映されていないデータが失われます。続行しますか？`
+      );
+      if (!confirmed) return;
+    }
     setProperties([]);
     setPendingCount(0);
     // Delete IndexedDB

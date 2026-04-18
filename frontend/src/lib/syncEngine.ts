@@ -11,7 +11,20 @@ import type { Property, SyncQueueItem } from '../types';
 
 const MAX_RETRIES = 5;
 
+// 同時実行防止フラグ
+let isProcessing = false;
+
 export async function processQueue(): Promise<{ synced: number; failed: number }> {
+  if (isProcessing) return { synced: 0, failed: 0 };
+  isProcessing = true;
+  try {
+    return await _processQueueImpl();
+  } finally {
+    isProcessing = false;
+  }
+}
+
+async function _processQueueImpl(): Promise<{ synced: number; failed: number }> {
   const queue = await getAllSyncQueue();
   let synced = 0;
   let failed = 0;
@@ -76,18 +89,22 @@ export async function fullSync(): Promise<Property[]> {
       .map((q) => q.data.id)
   );
 
-  const serverIds = new Set(serverData.map((p) => p.id));
-  const localOnlyRecords = localData.filter(
+  // ID が無いデータは除外（破損データ対策）
+  const validServerData = serverData.filter((p) => p.id && typeof p.id === 'string');
+  const validLocalData = localData.filter((p) => p.id && typeof p.id === 'string');
+
+  const serverIds = new Set(validServerData.map((p) => p.id));
+  const localOnlyRecords = validLocalData.filter(
     (p) => !serverIds.has(p.id) && pendingCreateIds.has(p.id)
   );
 
   // IDベースで重複除外（サーバー側を優先、ローカルのみのcreate待ちを追加）
   const mergedMap = new Map<string, Property>();
-  for (const p of serverData) {
-    if (p.id) mergedMap.set(p.id, p);
+  for (const p of validServerData) {
+    mergedMap.set(p.id, p);
   }
   for (const p of localOnlyRecords) {
-    if (p.id && !mergedMap.has(p.id)) mergedMap.set(p.id, p);
+    if (!mergedMap.has(p.id)) mergedMap.set(p.id, p);
   }
   const merged = Array.from(mergedMap.values());
   await putAllProperties(merged);
