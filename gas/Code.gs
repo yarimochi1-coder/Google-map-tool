@@ -358,6 +358,77 @@ function dedupeProperties() {
   return removed;
 }
 
+// Utility: visit_historyの最新visited_atをpropertiesのlast_visit_dateに反映
+function syncLastVisitFromHistory() {
+  var propSheet = getSheet();
+  var propData = propSheet.getDataRange().getValues();
+  if (propData.length <= 1) return 'No properties';
+  var propHeaders = propData[0];
+  var propIdCol = propHeaders.indexOf('id');
+  var lastVisitCol = propHeaders.indexOf('last_visit_date');
+  var createdCol = propHeaders.indexOf('created_at');
+  var statusCol = propHeaders.indexOf('status');
+  var visitCountCol = propHeaders.indexOf('visit_count');
+
+  // visit_historyから各property_idの最新visited_atと訪問数を集計
+  var histSheet = getHistorySheet();
+  var histData = histSheet.getDataRange().getValues();
+  var histHeaders = histData[0];
+  var hPidCol = histHeaders.indexOf('property_id');
+  var hVisitedCol = histHeaders.indexOf('visited_at');
+  var hStatusCol = histHeaders.indexOf('status');
+  var hMemoCol = histHeaders.indexOf('memo');
+
+  var latestByPid = {};
+  var visitCountByPid = {};
+  var earliestByPid = {}; // created_atフォールバック用
+  var tz = Session.getScriptTimeZone();
+
+  for (var i = 1; i < histData.length; i++) {
+    var pid = histData[i][hPidCol];
+    var visited = histData[i][hVisitedCol];
+    var memo = histData[i][hMemoCol] || '';
+    if (!pid || !visited) continue;
+
+    // Dateオブジェクトなら文字列化
+    var visitedStr = (visited instanceof Date)
+      ? Utilities.formatDate(visited, tz, 'yyyy/MM/dd HH:mm:ss')
+      : String(visited);
+
+    // 最新を記録（ステータス修正は除外）
+    if (memo !== 'ステータス修正') {
+      if (!latestByPid[pid] || visitedStr > latestByPid[pid]) {
+        latestByPid[pid] = visitedStr;
+      }
+      if (!earliestByPid[pid] || visitedStr < earliestByPid[pid]) {
+        earliestByPid[pid] = visitedStr;
+      }
+      // visit_count: 同日同物件は1回として、'再訪問'は別カウント
+      visitCountByPid[pid] = (visitCountByPid[pid] || 0) + 1;
+    }
+  }
+
+  // properties を更新
+  var updated = 0;
+  for (var i = 1; i < propData.length; i++) {
+    var pid = propData[i][propIdCol];
+    if (!pid) continue;
+    var changed = false;
+    if (latestByPid[pid]) {
+      propSheet.getRange(i + 1, lastVisitCol + 1).setValue(latestByPid[pid]);
+      changed = true;
+    }
+    if (!propData[i][createdCol] && earliestByPid[pid]) {
+      propSheet.getRange(i + 1, createdCol + 1).setValue(earliestByPid[pid]);
+      changed = true;
+    }
+    if (changed) updated++;
+  }
+
+  Logger.log('syncLastVisitFromHistory: Updated ' + updated + ' properties');
+  return 'Updated ' + updated + ' properties from visit_history';
+}
+
 // Utility: 同じ座標の重複物件を統合し、visit_historyのproperty_idも付け替える
 function dedupeByLocation() {
   var sheet = getSheet();
