@@ -88,9 +88,9 @@ export function PropertyDetail({
     setIsEditing(false);
   };
 
-  function formatRevisitDate(dateStr: string): string {
+  function formatRevisitDate(dateStr: any): string {
     if (!dateStr) return '';
-    const d = new Date(dateStr);
+    const d = dateStr instanceof Date ? dateStr : new Date(String(dateStr));
     if (isNaN(d.getTime())) return '';
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];

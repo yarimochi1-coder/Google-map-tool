@@ -242,8 +242,17 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
       .filter((p) => {
         if (!p.revisit) return false;
         if (p.status === 'contract' || p.status === 'completed' || p.status === 'impossible') return false;
-        // revisit の日付部分が今日と一致
-        const revisitDate = p.revisit.split('T')[0];
+        // revisit の日付部分が今日と一致（Date/string 両対応）
+        let revisitDate: string;
+        if (p.revisit instanceof Date) {
+          const d = p.revisit as Date;
+          revisitDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        } else {
+          const s = String(p.revisit);
+          revisitDate = s.split(' ')[0].split('T')[0].replace(/\//g, '-');
+          const m = revisitDate.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+          if (m) revisitDate = `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+        }
         return revisitDate === todayStr;
       })
       .map((p) => ({
