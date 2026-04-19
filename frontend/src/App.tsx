@@ -14,8 +14,9 @@ import { useGeolocation } from './hooks/useGeolocation';
 import { useLayerPins } from './hooks/useLayerPins';
 import { LayerPinDetail } from './components/LayerPinDetail';
 import { NameInputModal } from './components/NameInputModal';
+import { Settings } from './components/Settings';
 
-type View = 'map' | 'dashboard' | 'analytics' | 'plan';
+type View = 'map' | 'dashboard' | 'analytics' | 'plan' | 'settings';
 
 export default function App() {
   const [view, setView] = useState<View>('map');
@@ -121,11 +122,17 @@ export default function App() {
             properties={properties}
             onClose={() => setView('map')}
           />
-        ) : (
+        ) : view === 'plan' ? (
           <VisitPlan
             properties={properties}
             userPosition={userPosition}
             onSelectProperty={(p) => { setSelectedProperty(p); setView('map'); }}
+            onClose={() => setView('map')}
+          />
+        ) : (
+          <Settings
+            userName={userName}
+            onChangeUserName={setUserName}
             onClose={() => setView('map')}
           />
         )}
@@ -225,6 +232,15 @@ export default function App() {
               <path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z" />
             </svg>
             <span className="text-[10px] font-bold">分析</span>
+          </button>
+          <button
+            onClick={() => setView('settings')}
+            className={`flex-1 py-3 flex flex-col items-center gap-0.5 ${view === 'settings' ? 'text-blue-500' : 'text-gray-400'}`}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94 0 .31.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+            </svg>
+            <span className="text-[10px] font-bold">設定</span>
           </button>
         </div>
       )}

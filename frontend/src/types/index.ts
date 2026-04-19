@@ -43,6 +43,8 @@ export interface Property {
   user_id: string;
   visit_count: number;
   revisit: string; // '' or ISO date when flagged for revisit
+  flyer_distributed?: string; // 配布日時（空=未配布）
+  flyer_name?: string; // 配布したチラシ名
 }
 
 export type MarkerLayer = 'visit' | 'our_work' | 'target';

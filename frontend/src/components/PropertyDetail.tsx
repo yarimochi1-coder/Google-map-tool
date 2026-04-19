@@ -3,6 +3,7 @@ import type { Property, PropertyStatus } from '../types';
 import { StatusSelector } from './StatusSelector';
 import { getStatusConfig } from '../lib/statusConfig';
 import { gasGet } from '../lib/gasClient';
+import { getActiveFlyer } from './Settings';
 
 interface VisitRecord {
   status: string;
@@ -150,6 +151,39 @@ export function PropertyDetail({
         currentStatus={property.status}
         onSelect={(status) => onUpdateStatus(property.id, status)}
       />
+
+      {/* チラシ配布ボタン */}
+      <div className="px-4 py-2">
+        <button
+          onClick={() => {
+            if (property.flyer_distributed) {
+              // 解除
+              if (confirm(`「${property.flyer_name || 'チラシ'}」配布記録を解除しますか？`)) {
+                onUpdate(property.id, { flyer_distributed: '', flyer_name: '' });
+              }
+            } else {
+              const active = getActiveFlyer();
+              if (!active) {
+                alert('設定画面で配布するチラシを選択してください');
+                return;
+              }
+              onUpdate(property.id, {
+                flyer_distributed: new Date().toLocaleString('ja-JP'),
+                flyer_name: active,
+              });
+            }
+          }}
+          className={`w-full py-2.5 rounded-xl font-bold text-sm ${
+            property.flyer_distributed
+              ? 'bg-purple-500 text-white active:bg-purple-600'
+              : 'bg-purple-50 text-purple-600 border border-purple-300 active:bg-purple-100'
+          }`}
+        >
+          {property.flyer_distributed
+            ? `📄 配布済: ${property.flyer_name || '(名称なし)'}`
+            : '📄 チラシ配布'}
+        </button>
+      </div>
 
       {/* Actions */}
       <div className="flex gap-2 px-4 py-2">

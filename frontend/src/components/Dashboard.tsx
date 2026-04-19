@@ -125,6 +125,19 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
     const measured = periodVisits.filter((p) => p.status === 'measured').length;
     const appointments = periodVisits.filter((p) => p.status === 'appointment').length;
 
+    // チラシ配布集計（flyer_distributed が期間内のもの）
+    const flyerDistributed = filtered.filter((p) => {
+      if (!p.flyer_distributed) return false;
+      return isDateInRange(p.flyer_distributed, range.start, range.end);
+    });
+    const flyerCount = flyerDistributed.length;
+    const flyerByName: Record<string, number> = {};
+    flyerDistributed.forEach((p) => {
+      const name = p.flyer_name || '(名称なし)';
+      flyerByName[name] = (flyerByName[name] || 0) + 1;
+    });
+    const flyerBreakdown = Object.entries(flyerByName).sort((a, b) => b[1] - a[1]);
+
     // 期間内のステータス内訳
     const periodStatusBreakdown = STATUS_LIST.map((s) => ({
       ...s,
@@ -155,6 +168,8 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
       talkCount,
       measured,
       appointments,
+      flyerCount,
+      flyerBreakdown,
       statusCounts,
       periodStatusBreakdown,
       totalPins,
@@ -261,6 +276,10 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
           <p className="text-xs text-gray-500">アポ獲得数</p>
           <p className="text-3xl font-bold text-red-600">{stats.appointments}</p>
         </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm col-span-2">
+          <p className="text-xs text-gray-500">📄 チラシ配布数</p>
+          <p className="text-3xl font-bold text-purple-600">{stats.flyerCount}</p>
+        </div>
       </div>
 
       {/* Period visits status breakdown */}
@@ -274,6 +293,23 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
                   {s.icon} {s.label}
                 </span>
                 <span className="text-sm font-bold text-gray-700">{s.count}件</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* チラシ配布 */}
+      {stats.flyerCount > 0 && (
+        <div className="px-4 pb-4">
+          <h2 className="text-sm font-bold text-gray-700 mb-2">
+            チラシ配布 <span className="text-purple-600">{stats.flyerCount}件</span>
+          </h2>
+          <div className="bg-white rounded-xl shadow-sm divide-y">
+            {stats.flyerBreakdown.map(([name, count]) => (
+              <div key={name} className="flex justify-between px-4 py-2.5">
+                <span className="text-sm font-bold text-gray-700">📄 {name}</span>
+                <span className="text-sm text-purple-600 font-bold">{count}件</span>
               </div>
             ))}
           </div>
