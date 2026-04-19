@@ -553,21 +553,26 @@ function updateProperty(data) {
   var allData = sheet.getDataRange().getValues();
   var headers = allData[0];
   var idCol = headers.indexOf('id');
+  // 空文字列や空で既存データを上書きしないフィールド
+  var protectedIfEmpty = ['last_visit_date', 'created_at', 'status', 'staff', 'name'];
   for (var i = 1; i < allData.length; i++) {
     if (allData[i][idCol] === data.id) {
       for (var j = 0; j < headers.length; j++) {
         var key = headers[j];
-        if (key !== 'id' && key !== 'created_at' && data[key] !== undefined) {
-          sheet.getRange(i + 1, j + 1).setValue(data[key]);
-        }
+        if (key === 'id' || key === 'created_at') continue;
+        if (data[key] === undefined) continue;
+        // 空文字列で既存の非空値を上書きしない
+        if ((data[key] === '' || data[key] === null) &&
+            allData[i][j] !== '' && allData[i][j] !== null &&
+            protectedIfEmpty.indexOf(key) !== -1) continue;
+        sheet.getRange(i + 1, j + 1).setValue(data[key]);
       }
       var updatedAtCol = headers.indexOf('updated_at');
       sheet.getRange(i + 1, updatedAtCol + 1).setValue(new Date().toISOString());
       return data;
     }
   }
-  // IDが見つからない場合、重複防止のためそのまま返す（createしない）
-  Logger.log('updateProperty: ID not found, skipping create to prevent duplicates: ' + data.id);
+  Logger.log('updateProperty: ID not found, skipping: ' + data.id);
   return data;
 }
 

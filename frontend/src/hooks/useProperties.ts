@@ -129,7 +129,17 @@ export function useProperties() {
         await db.putProperty({ ...existing, ...updated });
       }
 
-      const queueItem = createSyncQueueItem('update', updated as Property);
+      // 送信データから空文字列・undefined を除去（サーバーでの空上書き防止）
+      const cleanedForSync: any = {};
+      for (const key of Object.keys(updated)) {
+        const val = (updated as any)[key];
+        if (val === undefined || val === null) continue;
+        if (val === '' && key !== 'memo' && key !== 'rejection_reason' && key !== 'revisit') continue;
+        cleanedForSync[key] = val;
+      }
+      cleanedForSync.id = id; // id は必須なので必ず入れる
+
+      const queueItem = createSyncQueueItem('update', cleanedForSync as Property);
       await db.addToSyncQueue(queueItem);
       setPendingCount((c) => c + 1);
       triggerSync();
