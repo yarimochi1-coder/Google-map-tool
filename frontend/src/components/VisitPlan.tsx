@@ -125,13 +125,16 @@ function getRemainingWorkdays(end: Date, holidays: string[] = []): number {
 }
 
 // Parse date string (handles both ISO and 2026/4/7 18:30:00 formats)
-function parseDate(s: string): Date | null {
+function parseDate(s: any): Date | null {
   if (!s) return null;
+  if (s instanceof Date) return isNaN(s.getTime()) ? null : s;
+  const str = String(s);
+  if (!str) return null;
   // Try ISO first
-  let d = new Date(s);
+  let d = new Date(str);
   if (!isNaN(d.getTime())) return d;
   // Japanese format: 2026/4/7 18:30:00 or 2026/4/7
-  const m = s.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  const m = str.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
   if (m) {
     const [, y, mo, da, h, mi, se] = m;
     d = new Date(Number(y), Number(mo) - 1, Number(da), Number(h || 0), Number(mi || 0), Number(se || 0));
