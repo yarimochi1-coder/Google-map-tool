@@ -6,6 +6,8 @@ var DAILY_STATS_NAME = 'daily_stats';
 var DAILY_STATS_HEADERS = ['date','visits','contacts','face_to_face','measurements','appointments','contracts','notes'];
 var LAYER_PINS_NAME = 'layer_pins';
 var LAYER_PINS_HEADERS = ['id','lat','lng','name','address','memo','layer','created_at'];
+var INQUIRIES_NAME = 'inquiries';
+var INQUIRIES_HEADERS = ['id','date','count','memo','created_at'];
 
 function doGet(e) {
   try {
@@ -28,6 +30,8 @@ function doGet(e) {
         return jsonResponse({ success: true, data: getDailyStats() });
       case 'layer_pins':
         return jsonResponse({ success: true, data: getLayerPins() });
+      case 'inquiries':
+        return jsonResponse({ success: true, data: getInquiries() });
       default:
         return jsonResponse({ success: false, error: 'Unknown action: ' + action });
     }
@@ -71,6 +75,11 @@ function doPost(e) {
           return jsonResponse({ success: true, data: importLayerPins(body.data) });
         case 'update_layer_pin':
           return jsonResponse({ success: true, data: updateLayerPin(body.data) });
+        case 'add_inquiry':
+          return jsonResponse({ success: true, data: addInquiry(body.data) });
+        case 'delete_inquiry':
+          deleteInquiry(body.data.id || body.id);
+          return jsonResponse({ success: true });
         default:
           return jsonResponse({ success: false, error: 'Unknown action: ' + action });
       }
@@ -821,6 +830,65 @@ function getDashboard(dateStr) {
     contracts: statusCounts['contract'] || 0,
     statusCounts: statusCounts
   };
+}
+
+// --- Inquiries (問い合わせ) ---
+
+function getInquiriesSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(INQUIRIES_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(INQUIRIES_NAME);
+    sheet.getRange(1, 1, 1, INQUIRIES_HEADERS.length).setValues([INQUIRIES_HEADERS]);
+  }
+  return sheet;
+}
+
+function getInquiries() {
+  var sheet = getInquiriesSheet();
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  var headers = data[0];
+  var dateCol = headers.indexOf('date');
+  var tz = Session.getScriptTimeZone();
+  var results = [];
+  for (var i = 1; i < data.length; i++) {
+    var obj = {};
+    for (var j = 0; j < headers.length; j++) {
+      var val = data[i][j];
+      if (j === dateCol && val instanceof Date) {
+        val = Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+      }
+      obj[headers[j]] = val;
+    }
+    obj.count = Number(obj.count) || 0;
+    results.push(obj);
+  }
+  return results;
+}
+
+function addInquiry(data) {
+  var sheet = getInquiriesSheet();
+  var id = data.id || Utilities.getUuid();
+  var now = new Date().toISOString();
+  var row = [
+    id,
+    data.date || '',
+    Number(data.count) || 1,
+    data.memo || '',
+    now
+  ];
+  sheet.appendRow(row);
+  return { id: id };
+}
+
+function deleteInquiry(id) {
+  var sheet = getInquiriesSheet();
+  var allData = sheet.getDataRange().getValues();
+  var idCol = allData[0].indexOf('id');
+  for (var i = 1; i < allData.length; i++) {
+    if (allData[i][idCol] === id) { sheet.deleteRow(i + 1); return; }
+  }
 }
 
 function jsonResponse(obj) {

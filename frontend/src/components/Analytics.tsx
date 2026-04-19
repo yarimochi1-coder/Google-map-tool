@@ -107,11 +107,17 @@ function filterHistory(history: VisitRecord[], dateRange: DateRange | null): Vis
   });
 }
 
+interface InquiryRecord { id: string; date: string; count: number; memo: string; }
+
 export function Analytics({ properties, onClose }: AnalyticsProps) {
   const [visitHistory, setVisitHistory] = useState<VisitRecord[]>([]);
+  const [inquiries, setInquiries] = useState<InquiryRecord[]>([]);
   useEffect(() => {
     gasGet<VisitRecord[]>('history').then((res) => {
       if (res.success && res.data) setVisitHistory(res.data);
+    }).catch(() => {});
+    gasGet<InquiryRecord[]>('inquiries').then((res) => {
+      if (res.success && res.data) setInquiries(res.data);
     }).catch(() => {});
   }, []);
 
@@ -256,13 +262,35 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     filtered.forEach((p) => { if (p.rejection_reason) rejections[p.rejection_reason] = (rejections[p.rejection_reason] || 0) + 1; });
     const rejectionList = Object.entries(rejections).sort((a, b) => b[1] - a[1]);
 
+    // チラシ配布集計
+    const flyerDistributedProps = filtered.filter((p: any) => {
+      if (!p.flyer_distributed) return false;
+      return isDateInRange(p.flyer_distributed, dateRange?.start ?? '0000-01-01', dateRange?.end ?? '9999-12-31');
+    });
+    const flyerTotal = flyerDistributedProps.length;
+    const flyerByName: Record<string, number> = {};
+    flyerDistributedProps.forEach((p: any) => {
+      const name = p.flyer_name || '(名称なし)';
+      flyerByName[name] = (flyerByName[name] || 0) + 1;
+    });
+    const flyerBreakdown = Object.entries(flyerByName).sort((a, b) => b[1] - a[1]);
+
+    // 問い合わせ集計（期間フィルタ）
+    const filteredInquiries = inquiries.filter((iq) => {
+      if (!iq.date) return false;
+      return isDateInRange(iq.date, dateRange?.start ?? '0000-01-01', dateRange?.end ?? '9999-12-31');
+    });
+    const inquiryTotal = filteredInquiries.reduce((sum, iq) => sum + (Number(iq.count) || 0), 0);
+
     return {
       totalVisits, funnel, overallRate, avgVisits, avgAmount,
       hourly, dowStats, weekday, weekend, cross,
       staffList, rejectionList,
       historyCount: fh.length,
+      flyerTotal, flyerBreakdown,
+      inquiryTotal, inquiries: filteredInquiries,
     };
-  }, [properties, visitHistory, dateRange]);
+  }, [properties, visitHistory, dateRange, inquiries]);
 
   const [crossMetric, setCrossMetric] = useState<'contact' | 'face'>('contact');
 
@@ -312,6 +340,56 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
           <p className="text-lg font-black text-orange-600">{stats.avgAmount > 0 ? `¥${(stats.avgAmount / 10000).toFixed(0)}万` : '-'}</p>
         </div>
       </div>
+
+      {/* 📄 チラシ + 問い合わせ */}
+      <div className="grid grid-cols-2 gap-2 px-4 pb-4">
+        <div className="bg-white rounded-xl p-3 shadow-sm text-center">
+          <p className="text-[10px] text-gray-500">📄 チラシ配布</p>
+          <p className="text-2xl font-black text-purple-600">{stats.flyerTotal}</p>
+          <p className="text-[9px] text-gray-400">件</p>
+        </div>
+        <div className="bg-white rounded-xl p-3 shadow-sm text-center">
+          <p className="text-[10px] text-gray-500">📞 問い合わせ</p>
+          <p className="text-2xl font-black text-pink-600">{stats.inquiryTotal}</p>
+          <p className="text-[9px] text-gray-400">
+            件 {stats.flyerTotal > 0 ? `(反響率 ${(stats.inquiryTotal / stats.flyerTotal * 100).toFixed(1)}%)` : ''}
+          </p>
+        </div>
+      </div>
+
+      {/* チラシ別内訳 */}
+      {stats.flyerBreakdown.length > 0 && (
+        <div className="px-4 pb-4">
+          <h2 className="text-sm font-bold text-gray-700 mb-2">チラシ別配布内訳</h2>
+          <div className="bg-white rounded-xl shadow-sm divide-y">
+            {stats.flyerBreakdown.map(([name, count]) => (
+              <div key={name} className="flex justify-between px-3 py-2 text-sm">
+                <span className="text-gray-700">📄 {name}</span>
+                <span className="font-bold text-purple-600">{count}件</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 問い合わせ履歴 */}
+      {stats.inquiries.length > 0 && (
+        <div className="px-4 pb-4">
+          <h2 className="text-sm font-bold text-gray-700 mb-2">問い合わせ履歴</h2>
+          <div className="bg-white rounded-xl shadow-sm divide-y">
+            {stats.inquiries
+              .slice()
+              .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+              .map((iq) => (
+                <div key={iq.id} className="flex items-center px-3 py-2 gap-2 text-sm">
+                  <span className="text-xs text-gray-500 w-20">{String(iq.date)}</span>
+                  <span className="flex-1 font-bold text-pink-600">{iq.count}件</span>
+                  {iq.memo && <span className="text-xs text-gray-400 truncate">{iq.memo}</span>}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Funnel */}
       <div className="px-4 pb-4">

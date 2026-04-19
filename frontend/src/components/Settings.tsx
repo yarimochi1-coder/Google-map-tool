@@ -1,4 +1,12 @@
 import { useState, useEffect } from 'react';
+import { gasGet, gasPost } from '../lib/gasClient';
+
+interface Inquiry {
+  id: string;
+  date: string;
+  count: number;
+  memo: string;
+}
 
 interface SettingsProps {
   userName: string;
@@ -36,10 +44,53 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
   const [newFlyer, setNewFlyer] = useState('');
   const [nameInput, setNameInput] = useState(userName);
 
+  // 問い合わせ
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [inquiryDate, setInquiryDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [inquiryCount, setInquiryCount] = useState('1');
+  const [inquiryMemo, setInquiryMemo] = useState('');
+  const [loadingInquiry, setLoadingInquiry] = useState(false);
+
+  const reloadInquiries = () => {
+    gasGet<Inquiry[]>('inquiries').then((res) => {
+      if (res.success && res.data) setInquiries(res.data);
+    }).catch(() => {});
+  };
+
   useEffect(() => {
     setFlyers(loadFlyers());
     setActiveFlyerState(getActiveFlyer());
+    reloadInquiries();
   }, []);
+
+  const addInquiry = async () => {
+    const count = parseInt(inquiryCount);
+    if (!inquiryDate || isNaN(count) || count <= 0) return;
+    setLoadingInquiry(true);
+    try {
+      await gasPost({
+        action: 'add_inquiry',
+        data: { date: inquiryDate, count, memo: inquiryMemo },
+      });
+      setInquiryCount('1');
+      setInquiryMemo('');
+      reloadInquiries();
+    } catch {
+      alert('問い合わせの保存に失敗しました');
+    } finally {
+      setLoadingInquiry(false);
+    }
+  };
+
+  const removeInquiry = async (id: string) => {
+    if (!confirm('この問い合わせ記録を削除しますか？')) return;
+    try {
+      await gasPost({ action: 'delete_inquiry', data: { id } });
+      reloadInquiries();
+    } catch {
+      alert('削除に失敗しました');
+    }
+  };
 
   const addFlyer = () => {
     const trimmed = newFlyer.trim();
@@ -170,6 +221,72 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
 
         <p className="text-xs text-gray-400 mt-2">
           ● が現在選択中のチラシ。ピンに「チラシ配布」ボタンを押すとこの名前で記録されます。
+        </p>
+      </div>
+
+      {/* 問い合わせ管理 */}
+      <div className="px-4 pt-4 pb-8">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">問い合わせ記録</h2>
+
+        {/* 入力フォーム */}
+        <div className="bg-white rounded-xl shadow-sm p-3 space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="date"
+              value={inquiryDate}
+              onChange={(e) => setInquiryDate(e.target.value)}
+              className="flex-1 border rounded-lg px-2 py-2 text-sm"
+            />
+            <input
+              type="number"
+              min="1"
+              value={inquiryCount}
+              onChange={(e) => setInquiryCount(e.target.value)}
+              className="w-20 border rounded-lg px-2 py-2 text-sm text-center"
+              placeholder="件数"
+            />
+          </div>
+          <input
+            type="text"
+            value={inquiryMemo}
+            onChange={(e) => setInquiryMemo(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 text-sm"
+            placeholder="メモ（任意）"
+          />
+          <button
+            onClick={addInquiry}
+            disabled={loadingInquiry}
+            className="w-full py-2 rounded-lg bg-pink-500 text-white text-sm font-bold disabled:bg-gray-300"
+          >
+            {loadingInquiry ? '保存中...' : '問い合わせを追加'}
+          </button>
+        </div>
+
+        {/* 記録一覧 */}
+        {inquiries.length > 0 && (
+          <div className="mt-3 bg-white rounded-xl shadow-sm divide-y">
+            {inquiries
+              .slice()
+              .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+              .slice(0, 30)
+              .map((iq) => (
+                <div key={iq.id} className="flex items-center px-3 py-2 gap-2">
+                  <span className="text-xs text-gray-500 w-20">{String(iq.date)}</span>
+                  <span className="flex-1 text-sm font-bold text-pink-600">{iq.count}件</span>
+                  {iq.memo && <span className="text-xs text-gray-400 truncate flex-1">{iq.memo}</span>}
+                  <button
+                    onClick={() => removeInquiry(iq.id)}
+                    className="text-red-400 text-xs px-2"
+                  >
+                    削除
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
+
+        <p className="text-xs text-gray-400 mt-2">
+          問い合わせがあった日と件数を記録します。分析タブで集計されます。
         </p>
       </div>
     </div>
