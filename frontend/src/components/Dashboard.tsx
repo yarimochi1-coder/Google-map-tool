@@ -285,8 +285,20 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
           <p className="text-3xl font-bold text-red-600">{stats.appointments}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm col-span-2">
-          <p className="text-xs text-gray-500">📄 チラシ配布数</p>
-          <p className="text-3xl font-bold text-purple-600">{stats.flyerCount}</p>
+          <div className="flex items-baseline justify-between">
+            <p className="text-xs text-gray-500">📄 チラシ配布数</p>
+            <p className="text-3xl font-bold text-purple-600">{stats.flyerCount}</p>
+          </div>
+          {stats.flyerBreakdown.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+              {stats.flyerBreakdown.map(([name, count]) => (
+                <div key={name} className="flex justify-between text-xs">
+                  <span className="text-gray-600 truncate flex-1">📄 {name}</span>
+                  <span className="text-purple-600 font-bold ml-2">{count}件</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -301,23 +313,6 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
                   {s.icon} {s.label}
                 </span>
                 <span className="text-sm font-bold text-gray-700">{s.count}件</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* チラシ配布 */}
-      {stats.flyerCount > 0 && (
-        <div className="px-4 pb-4">
-          <h2 className="text-sm font-bold text-gray-700 mb-2">
-            チラシ配布 <span className="text-purple-600">{stats.flyerCount}件</span>
-          </h2>
-          <div className="bg-white rounded-xl shadow-sm divide-y">
-            {stats.flyerBreakdown.map(([name, count]) => (
-              <div key={name} className="flex justify-between px-4 py-2.5">
-                <span className="text-sm font-bold text-gray-700">📄 {name}</span>
-                <span className="text-sm text-purple-600 font-bold">{count}件</span>
               </div>
             ))}
           </div>

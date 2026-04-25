@@ -17,8 +17,8 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
   const [staff] = useState(defaultStaff ?? '');
   const [memo, setMemo] = useState('');
   const activeFlyers = getActiveFlyers();
-  // 配布中チラシは初期で全部チェックON
-  const [selectedFlyers, setSelectedFlyers] = useState<string[]>(activeFlyers);
+  // 初期は全て未チェック（実際に配ったものだけチェックする）
+  const [selectedFlyers, setSelectedFlyers] = useState<string[]>([]);
 
   const toggleFlyer = (name: string) => {
     setSelectedFlyers((prev) =>
