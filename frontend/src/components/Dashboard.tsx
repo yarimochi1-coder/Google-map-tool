@@ -126,15 +126,23 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
     const appointments = periodVisits.filter((p) => p.status === 'appointment').length;
 
     // チラシ配布集計（flyer_distributed が期間内のもの）
+    // 複数チラシ配布時は flyer_name がカンマ区切り → 1チラシ=1件としてカウント
     const flyerDistributed = filtered.filter((p) => {
       if (!p.flyer_distributed) return false;
       return isDateInRange(p.flyer_distributed, range.start, range.end);
     });
-    const flyerCount = flyerDistributed.length;
+    let flyerCount = 0;
     const flyerByName: Record<string, number> = {};
     flyerDistributed.forEach((p) => {
-      const name = p.flyer_name || '(名称なし)';
-      flyerByName[name] = (flyerByName[name] || 0) + 1;
+      const names = (p.flyer_name || '(名称なし)')
+        .split(',')
+        .map((n: string) => n.trim())
+        .filter((n: string) => n.length > 0);
+      const list = names.length > 0 ? names : ['(名称なし)'];
+      list.forEach((n: string) => {
+        flyerByName[n] = (flyerByName[n] || 0) + 1;
+        flyerCount++;
+      });
     });
     const flyerBreakdown = Object.entries(flyerByName).sort((a, b) => b[1] - a[1]);
 

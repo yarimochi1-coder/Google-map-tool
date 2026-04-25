@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import type { PropertyStatus } from '../types';
 import { STATUS_LIST } from '../lib/statusConfig';
-import { getActiveFlyer } from './Settings';
+import { getActiveFlyers } from './Settings';
 
 interface NewPinModalProps {
   lat: number;
   lng: number;
   defaultStaff?: string;
-  onConfirm: (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerDistributed: boolean; flyerName: string }) => void;
+  onConfirm: (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerNames: string[] }) => void;
   onCancel: () => void;
 }
 
@@ -16,8 +16,15 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
   const [status, setStatus] = useState<PropertyStatus>('absent');
   const [staff] = useState(defaultStaff ?? '');
   const [memo, setMemo] = useState('');
-  const activeFlyer = getActiveFlyer();
-  const [flyerDistributed, setFlyerDistributed] = useState(false);
+  const activeFlyers = getActiveFlyers();
+  // 配布中チラシは初期で全部チェックON
+  const [selectedFlyers, setSelectedFlyers] = useState<string[]>(activeFlyers);
+
+  const toggleFlyer = (name: string) => {
+    setSelectedFlyers((prev) =>
+      prev.includes(name) ? prev.filter((f) => f !== name) : [...prev, name]
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center">
@@ -90,24 +97,37 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
             />
           </div>
 
-          {/* チラシ配布 */}
+          {/* チラシ配布（複数選択可） */}
           <div>
-            <label className="text-sm font-bold text-gray-700">チラシ配布</label>
-            {activeFlyer ? (
-              <button
-                onClick={() => setFlyerDistributed((v) => !v)}
-                className={`w-full mt-1 py-3 rounded-xl text-sm font-bold transition-all ${
-                  flyerDistributed
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-purple-50 text-purple-600 border border-purple-300'
-                }`}
-              >
-                {flyerDistributed ? `✓ 配布する: ${activeFlyer}` : `📄 配布する: ${activeFlyer}`}
-              </button>
-            ) : (
+            <label className="text-sm font-bold text-gray-700">配布したチラシ</label>
+            {activeFlyers.length === 0 ? (
               <p className="text-xs text-gray-400 mt-1 px-3 py-2 bg-gray-50 rounded-lg">
                 設定画面でチラシを選択してください
               </p>
+            ) : (
+              <div className="mt-1 space-y-1">
+                {activeFlyers.map((f) => {
+                  const checked = selectedFlyers.includes(f);
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => toggleFlyer(f)}
+                      className={`w-full px-3 py-2 rounded-xl text-sm flex items-center gap-2 transition-all ${
+                        checked
+                          ? 'bg-purple-500 text-white font-bold'
+                          : 'bg-purple-50 text-purple-600 border border-purple-300'
+                      }`}
+                    >
+                      <span className={`inline-flex items-center justify-center w-5 h-5 rounded border-2 ${
+                        checked ? 'bg-white text-purple-600 border-white' : 'border-purple-300'
+                      }`}>
+                        {checked ? '✓' : ''}
+                      </span>
+                      📄 {f}
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
 
@@ -120,7 +140,7 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
               キャンセル
             </button>
             <button
-              onClick={() => onConfirm({ name, status, staff, memo, flyerDistributed, flyerName: flyerDistributed ? activeFlyer : '' })}
+              onClick={() => onConfirm({ name, status, staff, memo, flyerNames: selectedFlyers })}
               className="flex-1 py-3 rounded-xl font-bold text-sm bg-blue-500 text-white active:bg-blue-600"
             >
               ピンを追加

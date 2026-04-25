@@ -54,9 +54,11 @@ export default function App() {
   );
 
   const handleConfirmNewPin = useCallback(
-    async (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerDistributed?: boolean; flyerName?: string }) => {
+    async (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerNames?: string[] }) => {
       if (!newPinLocation) return;
       const now = new Date().toLocaleString('ja-JP');
+      const flyers = data.flyerNames ?? [];
+      const hasFlyers = flyers.length > 0;
       await addProperty({
         lat: newPinLocation.lat,
         lng: newPinLocation.lng,
@@ -75,8 +77,8 @@ export default function App() {
         revisit: '',
         last_visit_date: now,
         user_id: '',
-        flyer_distributed: data.flyerDistributed ? now : '',
-        flyer_name: data.flyerDistributed ? (data.flyerName || '') : '',
+        flyer_distributed: hasFlyers ? now : '',
+        flyer_name: hasFlyers ? flyers.join(', ') : '',
       });
       setNewPinLocation(null);
       setSelectedProperty(null);

@@ -262,16 +262,23 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     filtered.forEach((p) => { if (p.rejection_reason) rejections[p.rejection_reason] = (rejections[p.rejection_reason] || 0) + 1; });
     const rejectionList = Object.entries(rejections).sort((a, b) => b[1] - a[1]);
 
-    // チラシ配布集計
+    // チラシ配布集計（複数チラシは個別にカウント）
     const flyerDistributedProps = filtered.filter((p: any) => {
       if (!p.flyer_distributed) return false;
       return isDateInRange(p.flyer_distributed, dateRange?.start ?? '0000-01-01', dateRange?.end ?? '9999-12-31');
     });
-    const flyerTotal = flyerDistributedProps.length;
+    let flyerTotal = 0;
     const flyerByName: Record<string, number> = {};
     flyerDistributedProps.forEach((p: any) => {
-      const name = p.flyer_name || '(名称なし)';
-      flyerByName[name] = (flyerByName[name] || 0) + 1;
+      const names = String(p.flyer_name || '(名称なし)')
+        .split(',')
+        .map((n: string) => n.trim())
+        .filter((n: string) => n.length > 0);
+      const list = names.length > 0 ? names : ['(名称なし)'];
+      list.forEach((n: string) => {
+        flyerByName[n] = (flyerByName[n] || 0) + 1;
+        flyerTotal++;
+      });
     });
     const flyerBreakdown = Object.entries(flyerByName).sort((a, b) => b[1] - a[1]);
 

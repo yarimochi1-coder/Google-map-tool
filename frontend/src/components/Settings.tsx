@@ -15,7 +15,8 @@ interface SettingsProps {
 }
 
 const FLYERS_STORAGE_KEY = 'paint-map-flyers';
-const ACTIVE_FLYER_KEY = 'paint-map-active-flyer';
+const ACTIVE_FLYER_KEY = 'paint-map-active-flyer'; // 旧（単一）互換用
+const ACTIVE_FLYERS_KEY = 'paint-map-active-flyers'; // 新（複数）
 
 export function loadFlyers(): string[] {
   try {
@@ -30,17 +31,30 @@ export function saveFlyers(flyers: string[]) {
   localStorage.setItem(FLYERS_STORAGE_KEY, JSON.stringify(flyers));
 }
 
-export function getActiveFlyer(): string {
-  return localStorage.getItem(ACTIVE_FLYER_KEY) ?? '';
+// 配布中チラシ（複数）
+export function getActiveFlyers(): string[] {
+  try {
+    const raw = localStorage.getItem(ACTIVE_FLYERS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  // 旧キーからフォールバック
+  const single = localStorage.getItem(ACTIVE_FLYER_KEY);
+  return single ? [single] : [];
 }
 
-export function setActiveFlyer(name: string) {
-  localStorage.setItem(ACTIVE_FLYER_KEY, name);
+export function setActiveFlyers(names: string[]) {
+  localStorage.setItem(ACTIVE_FLYERS_KEY, JSON.stringify(names));
+}
+
+// 旧API互換（最初の1件を返す）
+export function getActiveFlyer(): string {
+  const list = getActiveFlyers();
+  return list[0] ?? '';
 }
 
 export function Settings({ userName, onChangeUserName, onClose }: SettingsProps) {
   const [flyers, setFlyers] = useState<string[]>([]);
-  const [activeFlyer, setActiveFlyerState] = useState<string>('');
+  const [activeFlyers, setActiveFlyersState] = useState<string[]>([]);
   const [newFlyer, setNewFlyer] = useState('');
   const [nameInput, setNameInput] = useState(userName);
 
@@ -59,7 +73,7 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
 
   useEffect(() => {
     setFlyers(loadFlyers());
-    setActiveFlyerState(getActiveFlyer());
+    setActiveFlyersState(getActiveFlyers());
     reloadInquiries();
   }, []);
 
@@ -98,9 +112,11 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
     const updated = [...flyers, trimmed];
     setFlyers(updated);
     saveFlyers(updated);
-    if (!activeFlyer) {
-      setActiveFlyerState(trimmed);
-      setActiveFlyer(trimmed);
+    // 1件目は自動で配布中に
+    if (activeFlyers.length === 0) {
+      const next = [trimmed];
+      setActiveFlyersState(next);
+      setActiveFlyers(next);
     }
     setNewFlyer('');
   };
@@ -109,16 +125,19 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
     const updated = flyers.filter((f) => f !== name);
     setFlyers(updated);
     saveFlyers(updated);
-    if (activeFlyer === name) {
-      const nextActive = updated[0] ?? '';
-      setActiveFlyerState(nextActive);
-      setActiveFlyer(nextActive);
+    if (activeFlyers.includes(name)) {
+      const next = activeFlyers.filter((f) => f !== name);
+      setActiveFlyersState(next);
+      setActiveFlyers(next);
     }
   };
 
-  const selectActive = (name: string) => {
-    setActiveFlyerState(name);
-    setActiveFlyer(name);
+  const toggleActive = (name: string) => {
+    const next = activeFlyers.includes(name)
+      ? activeFlyers.filter((f) => f !== name)
+      : [...activeFlyers, name];
+    setActiveFlyersState(next);
+    setActiveFlyers(next);
   };
 
   const saveName = () => {
@@ -161,14 +180,16 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
         <h2 className="text-sm font-bold text-gray-700 mb-2">チラシ管理</h2>
 
         {/* 現在のチラシ */}
-        {activeFlyer && (
+        {activeFlyers.length > 0 && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-2">
-            <p className="text-xs text-orange-700 mb-1">現在配布中のチラシ</p>
-            <p className="text-base font-bold text-orange-900">📄 {activeFlyer}</p>
+            <p className="text-xs text-orange-700 mb-1">現在配布中のチラシ ({activeFlyers.length}枚)</p>
+            <p className="text-sm font-bold text-orange-900">
+              {activeFlyers.map((f) => `📄 ${f}`).join('   ')}
+            </p>
           </div>
         )}
 
-        {/* チラシリスト */}
+        {/* チラシリスト（複数チェック可） */}
         <div className="bg-white rounded-xl shadow-sm">
           {flyers.length === 0 ? (
             <p className="text-center text-gray-400 text-sm py-6">
@@ -176,15 +197,22 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
             </p>
           ) : (
             <div className="divide-y">
-              {flyers.map((name) => (
+              {flyers.map((name) => {
+                const checked = activeFlyers.includes(name);
+                return (
                 <div key={name} className="flex items-center px-3 py-2.5 gap-2">
                   <button
-                    onClick={() => selectActive(name)}
-                    className={`flex-1 text-left text-sm ${
-                      activeFlyer === name ? 'font-bold text-orange-600' : 'text-gray-700'
+                    onClick={() => toggleActive(name)}
+                    className={`flex-1 text-left text-sm flex items-center gap-2 ${
+                      checked ? 'font-bold text-orange-600' : 'text-gray-700'
                     }`}
                   >
-                    {activeFlyer === name ? '● ' : '○ '}{name}
+                    <span className={`inline-flex items-center justify-center w-5 h-5 rounded border-2 ${
+                      checked ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-300'
+                    }`}>
+                      {checked ? '✓' : ''}
+                    </span>
+                    {name}
                   </button>
                   <button
                     onClick={() => {
@@ -195,7 +223,8 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
                     削除
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -220,7 +249,7 @@ export function Settings({ userName, onChangeUserName, onClose }: SettingsProps)
         </div>
 
         <p className="text-xs text-gray-400 mt-2">
-          ● が現在選択中のチラシ。ピンに「チラシ配布」ボタンを押すとこの名前で記録されます。
+          ✓ が配布中のチラシ。新規ピン作成時に配布したものをチェックして記録します。
         </p>
       </div>
 

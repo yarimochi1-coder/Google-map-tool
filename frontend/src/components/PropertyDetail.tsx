@@ -3,7 +3,7 @@ import type { Property, PropertyStatus } from '../types';
 import { StatusSelector } from './StatusSelector';
 import { getStatusConfig } from '../lib/statusConfig';
 import { gasGet } from '../lib/gasClient';
-import { getActiveFlyer } from './Settings';
+import { getActiveFlyers } from './Settings';
 
 interface VisitRecord {
   status: string;
@@ -162,14 +162,14 @@ export function PropertyDetail({
                 onUpdate(property.id, { flyer_distributed: '', flyer_name: '' });
               }
             } else {
-              const active = getActiveFlyer();
-              if (!active) {
+              const actives = getActiveFlyers();
+              if (actives.length === 0) {
                 alert('設定画面で配布するチラシを選択してください');
                 return;
               }
               onUpdate(property.id, {
                 flyer_distributed: new Date().toLocaleString('ja-JP'),
-                flyer_name: active,
+                flyer_name: actives.join(', '),
               });
             }
           }}
