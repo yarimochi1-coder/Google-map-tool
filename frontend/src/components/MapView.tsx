@@ -5,9 +5,7 @@ import {
   AdvancedMarker,
   useMap,
 } from '@vis.gl/react-google-maps';
-import Supercluster from 'supercluster';
 import type { Property, LayerPin } from '../types';
-import { ClusterMarker } from './ClusterMarker';
 import { getStatusConfig } from '../lib/statusConfig';
 
 const LAYER_STYLES = {
@@ -22,8 +20,10 @@ import { useDeviceHeading } from '../hooks/useDeviceHeading';
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string;
 
-// Zoom level above which individual pins are shown (no clustering)
-const CLUSTER_MAX_ZOOM = 17;
+// 名前ラベルを表示するズーム閾値（これ以上で表示）
+const NAME_LABEL_MIN_ZOOM = 16;
+// フルサイズピンを表示するズーム閾値（これ以上でフル、未満でドット）
+const FULL_PIN_MIN_ZOOM = 14;
 
 interface MapViewProps {
   properties: Property[];
@@ -146,76 +146,19 @@ function MapContent({
     }
   }, [userPosition, map, isFollowing, headingMode, startCompass, stopCompass]);
 
-  // Supercluster indexes at different radii for hierarchical clustering
-  // Low zoom (far out) = large radius (prefecture/city level)
-  // High zoom (close in) = small radius (neighborhood level)
-  const clusterIndexes = useMemo(() => {
-    const points = properties.map((p, i) => ({
-      type: 'Feature' as const,
-      geometry: { type: 'Point' as const, coordinates: [p.lng, p.lat] },
-      properties: { propertyIndex: i },
-    }));
-
-    const configs = [
-      { minZoom: 0, maxZoom: 7, radius: 200 },   // 県レベル
-      { minZoom: 8, maxZoom: 10, radius: 150 },   // 市レベル
-      { minZoom: 11, maxZoom: 13, radius: 100 },  // 区・町レベル
-      { minZoom: 14, maxZoom: CLUSTER_MAX_ZOOM, radius: 60 }, // 番地レベル
-    ];
-
-    return configs.map((cfg) => {
-      const index = new Supercluster<{ propertyIndex: number }>({
-        radius: cfg.radius,
-        maxZoom: cfg.maxZoom,
-        minZoom: cfg.minZoom,
-      });
-      index.load(points);
-      return { ...cfg, index };
-    });
-  }, [properties]);
-
-  // Pick the right cluster index for current zoom
-  const clusterIndex = useMemo(() => {
-    const z = Math.floor(zoom);
-    const match = clusterIndexes.find((c) => z >= c.minZoom && z <= c.maxZoom);
-    return match?.index ?? clusterIndexes[clusterIndexes.length - 1].index;
-  }, [zoom, clusterIndexes]);
-
-  // Get clusters or individual points based on current viewport
+  // 個別ピンのみ（クラスター無効）
+  // ビューポート内のピンだけ描画（パフォーマンス対策）
   const markers = useMemo(() => {
     if (!bounds) return { clusters: [], singles: properties };
-
     const ne = bounds.getNorthEast();
     const sw = bounds.getSouthWest();
-    const bbox: [number, number, number, number] = [
-      sw.lng(), sw.lat(), ne.lng(), ne.lat(),
-    ];
-
-    const rawClusters = clusterIndex.getClusters(bbox, Math.floor(zoom));
-
-    const clusters: { id: number; lat: number; lng: number; properties: Property[] }[] = [];
-    const singles: Property[] = [];
-
-    for (const c of rawClusters) {
-      const [lng, lat] = c.geometry.coordinates;
-      const props = c.properties as Record<string, unknown>;
-      if (props.cluster) {
-        const clusterId = props.cluster_id as number;
-        const leaves = clusterIndex.getLeaves(clusterId, Infinity);
-        const clusterProps = leaves.map((l) => properties[l.properties.propertyIndex]);
-        clusters.push({
-          id: clusterId,
-          lat,
-          lng,
-          properties: clusterProps,
-        });
-      } else {
-        singles.push(properties[(props as { propertyIndex: number }).propertyIndex]);
-      }
-    }
-
-    return { clusters, singles };
-  }, [bounds, zoom, clusterIndex, properties]);
+    const minLat = sw.lat(), maxLat = ne.lat();
+    const minLng = sw.lng(), maxLng = ne.lng();
+    const singles = properties.filter(
+      (p) => p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng
+    );
+    return { clusters: [] as { id: number; lat: number; lng: number; properties: Property[] }[], singles };
+  }, [bounds, properties]);
 
   const handleBoundsChanged = useCallback(() => {
     if (map) {
@@ -223,16 +166,6 @@ function MapContent({
       setZoom(map.getZoom() ?? 15);
     }
   }, [map]);
-
-  const handleClusterClick = useCallback(
-    (lat: number, lng: number) => {
-      if (!map) return;
-      setIsFollowing(false);
-      map.panTo({ lat, lng });
-      map.setZoom((map.getZoom() ?? 15) + 2);
-    },
-    [map]
-  );
 
   // Capture accurate lat/lng from Google Maps events
   const lastMapLatLng = useRef<{ lat: number; lng: number } | null>(null);
@@ -400,23 +333,11 @@ function MapContent({
         onIdle={handleIdle}
         style={{ width: '100%', height: '100%' }}
       >
-        {/* Cluster markers */}
-        {showVisit && markers.clusters.map((c) => (
-          <AdvancedMarker
-            key={`cluster-${c.id}`}
-            position={{ lat: c.lat, lng: c.lng }}
-          >
-            <ClusterMarker
-              properties={c.properties}
-              zoom={zoom}
-              onClick={() => handleClusterClick(c.lat, c.lng)}
-            />
-          </AdvancedMarker>
-        ))}
-
-        {/* Individual visit markers */}
+        {/* Visit markers (個別表示・ズームによってドット/フルピン切替) */}
         {showVisit && markers.singles.map((p) => {
           const cfg = getStatusConfig(p.status);
+          const isDot = zoom < FULL_PIN_MIN_ZOOM;
+          const showLabel = zoom >= NAME_LABEL_MIN_ZOOM;
           return (
             <AdvancedMarker
               key={p.id}
@@ -424,28 +345,36 @@ function MapContent({
               onClick={() => onSelectProperty(p)}
               title={p.name || cfg.label}
             >
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
+              {isDot ? (
                 <div style={{
-                  width: 28, height: 28, borderRadius: '50% 50% 50% 0',
-                  backgroundColor: cfg.color, border: '2px solid #fff',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#fff', fontSize: 12, fontWeight: 'bold',
-                  transform: 'rotate(-45deg)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-                }}>
-                  <span style={{ transform: 'rotate(45deg)' }}>{cfg.icon}</span>
-                </div>
-                {p.name && (
-                  <span style={{
-                    fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)',
-                    padding: '0 4px', borderRadius: 3, marginTop: 2,
-                    color: '#333', whiteSpace: 'nowrap', maxWidth: 80,
-                    overflow: 'hidden', textOverflow: 'ellipsis',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  width: 10, height: 10, borderRadius: '50%',
+                  backgroundColor: cfg.color, border: '1.5px solid #fff',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                }} />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50% 50% 50% 0',
+                    backgroundColor: cfg.color, border: '2px solid #fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: '#fff', fontSize: 12, fontWeight: 'bold',
+                    transform: 'rotate(-45deg)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
                   }}>
-                    {p.name}
-                  </span>
-                )}
-              </div>
+                    <span style={{ transform: 'rotate(45deg)' }}>{cfg.icon}</span>
+                  </div>
+                  {p.name && showLabel && (
+                    <span style={{
+                      fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)',
+                      padding: '0 4px', borderRadius: 3, marginTop: 2,
+                      color: '#333', whiteSpace: 'nowrap', maxWidth: 80,
+                      overflow: 'hidden', textOverflow: 'ellipsis',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                    }}>
+                      {p.name}
+                    </span>
+                  )}
+                </div>
+              )}
             </AdvancedMarker>
           );
         })}
