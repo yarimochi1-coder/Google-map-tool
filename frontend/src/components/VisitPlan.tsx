@@ -196,8 +196,12 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
   const goal = useMemo(() => scaleGoal(monthlyGoal, period, range, holidays), [monthlyGoal, period, range, holidays]);
 
   const stats = useMemo(() => {
-    // Exclude '施工済み' and '成約' from visit counts
-    const visitProps = properties.filter((p) => p.status !== 'completed' && p.status !== 'contract');
+    // 施工済み・成約を除外、さらに「不在 + 名前空欄」（チラシだけ配った家）も除外
+    const visitProps = properties.filter((p) => {
+      if (p.status === 'completed' || p.status === 'contract') return false;
+      if (p.status === 'absent' && !(p.name || '').trim()) return false;
+      return true;
+    });
 
     // Filter properties whose visit date falls in range
     const inRange = visitProps.filter((p) => {

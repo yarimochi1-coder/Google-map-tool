@@ -153,7 +153,12 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         })
       : properties;
 
-    const visitProps = filtered.filter((p) => p.status !== 'completed' && p.status !== 'contract');
+    const visitProps = filtered.filter((p) => {
+      if (p.status === 'completed' || p.status === 'contract') return false;
+      // 「不在 + 名前空欄」はチラシ配布のみ。訪問にはカウントしない
+      if (p.status === 'absent' && !((p as any).name || '').trim()) return false;
+      return true;
+    });
     const totalVisits = visitProps.length;
     const contacts = visitProps.filter((p) => CONTACT_STATUSES_FUNNEL.includes(p.status)).length;
     const faceToFace = visitProps.filter((p) => FACE_STATUSES.includes(p.status)).length;

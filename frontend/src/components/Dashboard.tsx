@@ -110,8 +110,12 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
       ? (selectedStaff === 'all' ? properties : properties.filter((p) => getStaffName(p.staff) === selectedStaff))
       : properties.filter((p) => getStaffName(p.staff) === userName);
 
-    // 施工済み・成約を除外して訪問対象
-    const visitProps = filtered.filter((p) => p.status !== 'completed' && p.status !== 'contract');
+    // 施工済み・成約を除外、さらに「不在 + 名前空欄」（チラシだけ配った家）も除外
+    const visitProps = filtered.filter((p) => {
+      if (p.status === 'completed' || p.status === 'contract') return false;
+      if (p.status === 'absent' && !(p.name || '').trim()) return false;
+      return true;
+    });
     const periodVisits = visitProps.filter((p) => {
       const dateRef = p.last_visit_date || p.created_at;
       if (!dateRef) return false;
