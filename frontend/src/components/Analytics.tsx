@@ -16,12 +16,12 @@ interface AnalyticsProps {
   onClose: () => void;
 }
 
-// 接触 = 不在以外（誰かが応答した）。施工済み・成約はfilterHistoryで除外済み
-// ファネル用の接触（Dashboard定義）
-// Dashboard と統一（絶対無理も接触扱い）
-const CONTACT_STATUSES_FUNNEL = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible'];
-// 対面 = 実際に顔を合わせた（計測・アポも対面を経由している）
-const FACE_STATUSES = ['instant_return', 'ng', 'measured', 'appointment', 'impossible'];
+// ファネル階層: 成約は上流すべてに加算（成約=アポ=計測=対面=接触=訪問）
+const CONTACT_STATUSES_FUNNEL = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible', 'measured', 'appointment', 'contract'];
+const FACE_STATUSES = ['instant_return', 'ng', 'measured', 'appointment', 'impossible', 'contract'];
+const TALK_STATUSES = ['ng', 'measured', 'appointment', 'contract'];
+const MEASURED_STATUSES = ['measured', 'appointment', 'contract'];
+const APPO_STATUSES = ['appointment', 'contract'];
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
 
 type DateRange = { start: string; end: string; label: string };
@@ -154,7 +154,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       : properties;
 
     const visitProps = filtered.filter((p) => {
-      if (p.status === 'completed' || p.status === 'contract') return false;
+      if (p.status === 'completed') return false;
       // 「不在 + 名前空欄」はチラシ配布のみ。訪問にはカウントしない
       if (p.status === 'absent' && !((p as any).name || '').trim()) return false;
       return true;
@@ -162,10 +162,10 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     const totalVisits = visitProps.length;
     const contacts = visitProps.filter((p) => CONTACT_STATUSES_FUNNEL.includes(p.status)).length;
     const faceToFace = visitProps.filter((p) => FACE_STATUSES.includes(p.status)).length;
-    const talkCount = visitProps.filter((p) => p.status === 'ng').length;
-    const measured = filtered.filter((p) => p.status === 'measured').length;
-    const appointments = filtered.filter((p) => p.status === 'appointment').length;
-    const contracts = filtered.filter((p) => p.status === 'contract').length;
+    const talkCount = visitProps.filter((p) => TALK_STATUSES.includes(p.status)).length;
+    const measured = visitProps.filter((p) => MEASURED_STATUSES.includes(p.status)).length;
+    const appointments = visitProps.filter((p) => APPO_STATUSES.includes(p.status)).length;
+    const contracts = visitProps.filter((p) => p.status === 'contract').length;
 
     const funnel = [
       { label: '総訪問', value: totalVisits, rate: 100, color: '#64B5F6' },
@@ -247,19 +247,15 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       if (FACE_STATUSES.includes(r.status)) cross[key].faced++;
     });
 
-    // 担当者別
+    // 担当者別（ファネル階層適用）
     const staffMap: Record<string, { visits: number; contacts: number; appos: number; contracts: number }> = {};
     visitProps.forEach((p) => {
       const s = p.staff || '未設定';
       if (!staffMap[s]) staffMap[s] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
       staffMap[s].visits++;
       if (CONTACT_STATUSES_FUNNEL.includes(p.status)) staffMap[s].contacts++;
-      if (p.status === 'appointment') staffMap[s].appos++;
-    });
-    filtered.filter((p) => p.status === 'contract').forEach((p) => {
-      const s = p.staff || '未設定';
-      if (!staffMap[s]) staffMap[s] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
-      staffMap[s].contracts++;
+      if (APPO_STATUSES.includes(p.status)) staffMap[s].appos++;
+      if (p.status === 'contract') staffMap[s].contracts++;
     });
     const staffList = Object.entries(staffMap).sort((a, b) => b[1].visits - a[1].visits);
 

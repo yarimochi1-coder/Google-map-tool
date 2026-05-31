@@ -196,9 +196,9 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
   const goal = useMemo(() => scaleGoal(monthlyGoal, period, range, holidays), [monthlyGoal, period, range, holidays]);
 
   const stats = useMemo(() => {
-    // 施工済み・成約を除外、さらに「不在 + 名前空欄」（チラシだけ配った家）も除外
+    // 施工済みのみ除外（成約は訪問にカウント）、「不在 + 名前空欄」（チラシだけの家）も除外
     const visitProps = properties.filter((p) => {
-      if (p.status === 'completed' || p.status === 'contract') return false;
+      if (p.status === 'completed') return false;
       if (p.status === 'absent' && !(p.name || '').trim()) return false;
       return true;
     });
@@ -212,22 +212,17 @@ export function VisitPlan({ properties, userPosition, onSelectProperty, onClose 
       return d >= range.start && d <= range.end;
     });
 
-    // Count by status (Dashboard定義と一致させる)
-    const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible'];
-    const FACE_STATUSES = ['instant_return', 'ng'];
+    // ファネル階層: 成約は上流すべてに加算
+    const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible', 'measured', 'appointment', 'contract'];
+    const FACE_STATUSES = ['instant_return', 'ng', 'measured', 'appointment', 'contract'];
+    const MEASURED_STATUSES = ['measured', 'appointment', 'contract'];
+    const APPO_STATUSES = ['appointment', 'contract'];
     const visits = inRange.length;
     const interphone = inRange.filter((p) => CONTACT_STATUSES.includes(p.status)).length;
     const faceToFace = inRange.filter((p) => FACE_STATUSES.includes(p.status)).length;
-    const measurements = inRange.filter((p) => p.status === 'measured').length;
-    const appointments = inRange.filter((p) => p.status === 'appointment').length;
-    // 成約はvisitPropsに含まれていないので別途集計
-    const contracts = properties.filter((p) => {
-      if (p.status !== 'contract') return false;
-      const dateRef = p.last_visit_date || p.created_at;
-      if (!dateRef) return false;
-      const d = parseDate(dateRef);
-      return d && d >= range.start && d <= range.end;
-    }).length;
+    const measurements = inRange.filter((p) => MEASURED_STATUSES.includes(p.status)).length;
+    const appointments = inRange.filter((p) => APPO_STATUSES.includes(p.status)).length;
+    const contracts = inRange.filter((p) => p.status === 'contract').length;
 
     const remaining = getRemainingWorkdays(range.end, holidays);
     const perDay = period === 'day' ? 1 : remaining;

@@ -4,10 +4,17 @@ import { STATUS_LIST, getStatusConfig } from '../lib/statusConfig';
 
 const ADMIN_NAME = '有持';
 
-// 接触ステータス（不在・絶対無理・施工済み・成約・計測済み・アポ獲得以外）
-const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible'];
-// 対面ステータス
-const FACE_STATUSES = ['instant_return', 'ng'];
+// ファネル階層: 成約は上流すべてに加算される
+// 接触 = 不在以外のすべて（応答あり）
+const CONTACT_STATUSES = ['interphone', 'child', 'grandmother', 'grandfather', 'instant_return', 'ng', 'impossible', 'measured', 'appointment', 'contract'];
+// 対面 = 実際に顔を合わせた（インタ・絶対無理・子供等以外）
+const FACE_STATUSES = ['instant_return', 'ng', 'measured', 'appointment', 'contract'];
+// 話し込み以上
+const TALK_STATUSES = ['ng', 'measured', 'appointment', 'contract'];
+// 計測以上
+const MEASURED_STATUSES = ['measured', 'appointment', 'contract'];
+// アポ以上
+const APPO_STATUSES = ['appointment', 'contract'];
 
 interface DashboardProps {
   properties: Property[];
@@ -110,9 +117,9 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
       ? (selectedStaff === 'all' ? properties : properties.filter((p) => getStaffName(p.staff) === selectedStaff))
       : properties.filter((p) => getStaffName(p.staff) === userName);
 
-    // 施工済み・成約を除外、さらに「不在 + 名前空欄」（チラシだけ配った家）も除外
+    // 施工済みのみ除外（成約は訪問にカウント）、「不在 + 名前空欄」（チラシだけの家）も除外
     const visitProps = filtered.filter((p) => {
-      if (p.status === 'completed' || p.status === 'contract') return false;
+      if (p.status === 'completed') return false;
       if (p.status === 'absent' && !(p.name || '').trim()) return false;
       return true;
     });
@@ -122,12 +129,13 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
       return isDateInRange(dateRef, range.start, range.end);
     });
 
-    // KPI計算
+    // KPI計算（ファネル階層: 上位ステータスは下位にもカウント）
     const contacts = periodVisits.filter((p) => CONTACT_STATUSES.includes(p.status)).length;
     const faceToFace = periodVisits.filter((p) => FACE_STATUSES.includes(p.status)).length;
-    const talkCount = periodVisits.filter((p) => p.status === 'ng').length;
-    const measured = periodVisits.filter((p) => p.status === 'measured').length;
-    const appointments = periodVisits.filter((p) => p.status === 'appointment').length;
+    const talkCount = periodVisits.filter((p) => TALK_STATUSES.includes(p.status)).length;
+    const measured = periodVisits.filter((p) => MEASURED_STATUSES.includes(p.status)).length;
+    const appointments = periodVisits.filter((p) => APPO_STATUSES.includes(p.status)).length;
+    const contracts = periodVisits.filter((p) => p.status === 'contract').length;
 
     // チラシ配布集計（flyer_distributed が期間内のもの）
     // 複数チラシ配布時は flyer_name がカンマ区切り → 1チラシ=1件としてカウント
@@ -180,6 +188,7 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
       talkCount,
       measured,
       appointments,
+      contracts,
       flyerCount,
       flyerBreakdown,
       statusCounts,
@@ -287,6 +296,10 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
         <div className="bg-white rounded-xl p-4 shadow-sm">
           <p className="text-xs text-gray-500">アポ獲得数</p>
           <p className="text-3xl font-bold text-red-600">{stats.appointments}</p>
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm col-span-2">
+          <p className="text-xs text-gray-500">🤝 成約数</p>
+          <p className="text-3xl font-bold text-pink-600">{stats.contracts}</p>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm col-span-2">
           <div className="flex items-baseline justify-between">
