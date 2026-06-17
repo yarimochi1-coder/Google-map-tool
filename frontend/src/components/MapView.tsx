@@ -98,7 +98,12 @@ function MapContent({
 
   // Detect real pan (not pinch zoom) by checking center distance
   const handleIdle = useCallback(() => {
-    if (!map || !isFollowing) return;
+    if (!map) return;
+    // 地図の停止後に bounds/zoom を更新（ズーム中の再レンダリングを防ぐ）
+    setBounds(map.getBounds() ?? null);
+    setZoom(map.getZoom() ?? 15);
+
+    if (!isFollowing) return;
     const center = map.getCenter();
     if (!center || !userPosition) return;
 
@@ -160,12 +165,8 @@ function MapContent({
     return { clusters: [] as { id: number; lat: number; lng: number; properties: Property[] }[], singles };
   }, [bounds, properties]);
 
-  const handleBoundsChanged = useCallback(() => {
-    if (map) {
-      setBounds(map.getBounds() ?? null);
-      setZoom(map.getZoom() ?? 15);
-    }
-  }, [map]);
+  // bounds/zoom 更新は onIdle に任せて、ここでは何もしない
+  // （ズーム/パン中の毎フレーム再レンダリングを防ぐ）
 
   // Capture accurate lat/lng from Google Maps events
   const lastMapLatLng = useRef<{ lat: number; lng: number } | null>(null);
@@ -329,7 +330,6 @@ function MapContent({
         disableDefaultUI={true}
         zoomControl={true}
         clickableIcons={true}
-        onBoundsChanged={handleBoundsChanged}
         onIdle={handleIdle}
         style={{ width: '100%', height: '100%' }}
       >
