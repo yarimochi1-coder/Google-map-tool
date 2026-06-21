@@ -155,38 +155,57 @@ export function PropertyDetail({
       />
 
       {/* チラシ配布ボタン */}
-      <div className="px-4 py-2">
-        <button
-          onClick={() => {
-            const actives = getActiveFlyers();
-            if (actives.length === 0 && !property.flyer_distributed) {
-              alert('設定画面で配布するチラシを選択してください');
-              return;
-            }
-            // 既配布のチラシをパース
-            const already = String(property.flyer_name || '')
-              .split(',')
-              .map((s) => s.trim())
-              .filter((s) => s.length > 0);
-            // 配布候補 = 配布中チラシ ∪ 既配布チラシ（リスト表示用）
-            const merged = Array.from(new Set([...actives, ...already]));
-            // 初期チェック = 既配布のみ
-            setFlyerSelection(already);
-            // 一覧用に保持
-            (window as any).__flyerCandidates = merged;
-            setShowFlyerPicker(true);
-          }}
-          className={`w-full py-2.5 rounded-xl font-bold text-sm ${
-            property.flyer_distributed
-              ? 'bg-purple-500 text-white active:bg-purple-600'
-              : 'bg-purple-50 text-purple-600 border border-purple-300 active:bg-purple-100'
-          }`}
-        >
-          {property.flyer_distributed
-            ? `📄 配布済: ${property.flyer_name || '(名称なし)'}`
-            : '📄 チラシ配布'}
-        </button>
-      </div>
+      {(() => {
+        const actives = getActiveFlyers();
+        const already = String(property.flyer_name || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        // 配布中チラシのうち、まだ記録されていないもの
+        const toAdd = actives.filter((f) => !already.includes(f));
+        return (
+          <div className="px-4 py-2 space-y-2">
+            {/* クイック追加: 配布中チラシのうち未記録のものをワンタップで追加 */}
+            {toAdd.length > 0 && (
+              <button
+                onClick={() => {
+                  const merged = [...already, ...toAdd];
+                  onUpdate(property.id, {
+                    flyer_distributed: new Date().toLocaleString('ja-JP'),
+                    flyer_name: merged.join(', '),
+                  });
+                }}
+                className="w-full py-2.5 rounded-xl font-bold text-sm bg-green-500 text-white active:bg-green-600"
+              >
+                ＋ 配布記録: {toAdd.join(', ')}
+              </button>
+            )}
+
+            {/* 詳細編集（既配布表示 or 新規） */}
+            <button
+              onClick={() => {
+                if (actives.length === 0 && !property.flyer_distributed) {
+                  alert('設定画面で配布するチラシを選択してください');
+                  return;
+                }
+                const merged = Array.from(new Set([...actives, ...already]));
+                setFlyerSelection(already);
+                (window as any).__flyerCandidates = merged;
+                setShowFlyerPicker(true);
+              }}
+              className={`w-full py-2.5 rounded-xl font-bold text-sm ${
+                property.flyer_distributed
+                  ? 'bg-purple-500 text-white active:bg-purple-600'
+                  : 'bg-purple-50 text-purple-600 border border-purple-300 active:bg-purple-100'
+              }`}
+            >
+              {property.flyer_distributed
+                ? `📄 配布済: ${property.flyer_name || '(名称なし)'}`
+                : '📄 チラシ配布'}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* チラシ配布ピッカー（追加/解除） */}
       {showFlyerPicker && (
