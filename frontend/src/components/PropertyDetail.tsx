@@ -38,6 +38,8 @@ export function PropertyDetail({
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   });
+  const [showFlyerPicker, setShowFlyerPicker] = useState(false);
+  const [flyerSelection, setFlyerSelection] = useState<string[]>([]);
 
   // 訪問履歴を取得
   useEffect(() => {
@@ -156,22 +158,23 @@ export function PropertyDetail({
       <div className="px-4 py-2">
         <button
           onClick={() => {
-            if (property.flyer_distributed) {
-              // 解除
-              if (confirm(`「${property.flyer_name || 'チラシ'}」配布記録を解除しますか？`)) {
-                onUpdate(property.id, { flyer_distributed: '', flyer_name: '' });
-              }
-            } else {
-              const actives = getActiveFlyers();
-              if (actives.length === 0) {
-                alert('設定画面で配布するチラシを選択してください');
-                return;
-              }
-              onUpdate(property.id, {
-                flyer_distributed: new Date().toLocaleString('ja-JP'),
-                flyer_name: actives.join(', '),
-              });
+            const actives = getActiveFlyers();
+            if (actives.length === 0 && !property.flyer_distributed) {
+              alert('設定画面で配布するチラシを選択してください');
+              return;
             }
+            // 既配布のチラシをパース
+            const already = String(property.flyer_name || '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+            // 配布候補 = 配布中チラシ ∪ 既配布チラシ（リスト表示用）
+            const merged = Array.from(new Set([...actives, ...already]));
+            // 初期チェック = 既配布のみ
+            setFlyerSelection(already);
+            // 一覧用に保持
+            (window as any).__flyerCandidates = merged;
+            setShowFlyerPicker(true);
           }}
           className={`w-full py-2.5 rounded-xl font-bold text-sm ${
             property.flyer_distributed
@@ -184,6 +187,72 @@ export function PropertyDetail({
             : '📄 チラシ配布'}
         </button>
       </div>
+
+      {/* チラシ配布ピッカー（追加/解除） */}
+      {showFlyerPicker && (
+        <div className="px-4 py-2">
+          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
+            <p className="text-xs font-bold text-purple-700 mb-2">配布したチラシを選択（追加・解除可）</p>
+            <div className="space-y-1 mb-2">
+              {(() => {
+                const candidates: string[] = (window as any).__flyerCandidates || [];
+                if (candidates.length === 0) {
+                  return <p className="text-xs text-gray-400 py-2">配布中チラシがありません。設定画面で追加してください</p>;
+                }
+                return candidates.map((f) => {
+                  const checked = flyerSelection.includes(f);
+                  return (
+                    <button
+                      key={f}
+                      onClick={() => {
+                        setFlyerSelection((prev) =>
+                          prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]
+                        );
+                      }}
+                      className={`w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-all ${
+                        checked
+                          ? 'bg-purple-500 text-white font-bold'
+                          : 'bg-white text-purple-600 border border-purple-300'
+                      }`}
+                    >
+                      <span className={`inline-flex items-center justify-center w-5 h-5 rounded border-2 ${
+                        checked ? 'bg-white text-purple-600 border-white' : 'border-purple-300'
+                      }`}>
+                        {checked ? '✓' : ''}
+                      </span>
+                      📄 {f}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowFlyerPicker(false)}
+                className="flex-1 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-500"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => {
+                  if (flyerSelection.length === 0) {
+                    onUpdate(property.id, { flyer_distributed: '', flyer_name: '' });
+                  } else {
+                    onUpdate(property.id, {
+                      flyer_distributed: new Date().toLocaleString('ja-JP'),
+                      flyer_name: flyerSelection.join(', '),
+                    });
+                  }
+                  setShowFlyerPicker(false);
+                }}
+                className="flex-1 py-2 rounded-lg text-sm font-bold bg-purple-500 text-white"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 px-4 py-2">
