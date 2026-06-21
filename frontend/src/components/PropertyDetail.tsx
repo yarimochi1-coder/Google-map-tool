@@ -38,8 +38,6 @@ export function PropertyDetail({
     d.setDate(d.getDate() + 1);
     return d.toISOString().split('T')[0];
   });
-  const [showFlyerPicker, setShowFlyerPicker] = useState(false);
-  const [flyerSelection, setFlyerSelection] = useState<string[]>([]);
 
   // 訪問履歴を取得
   useEffect(() => {
@@ -154,125 +152,67 @@ export function PropertyDetail({
         onSelect={(status) => onUpdateStatus(property.id, status)}
       />
 
-      {/* チラシ配布ボタン */}
+      {/* チラシ配布: 配布中チラシを個別ボタンで表示。タップで即記録/解除 */}
       {(() => {
         const actives = getActiveFlyers();
         const already = String(property.flyer_name || '')
           .split(',')
           .map((s) => s.trim())
           .filter((s) => s.length > 0);
-        // 配布中チラシのうち、まだ記録されていないもの
-        const toAdd = actives.filter((f) => !already.includes(f));
-        return (
-          <div className="px-4 py-2 space-y-2">
-            {/* クイック追加: 配布中チラシのうち未記録のものをワンタップで追加 */}
-            {toAdd.length > 0 && (
-              <button
-                onClick={() => {
-                  const merged = [...already, ...toAdd];
-                  onUpdate(property.id, {
-                    flyer_distributed: new Date().toLocaleString('ja-JP'),
-                    flyer_name: merged.join(', '),
-                  });
-                }}
-                className="w-full py-2.5 rounded-xl font-bold text-sm bg-green-500 text-white active:bg-green-600"
-              >
-                ＋ 配布記録: {toAdd.join(', ')}
-              </button>
-            )}
+        // 表示候補 = 配布中チラシ ∪ 既配布チラシ（既配布なのに配布中でないものも残す）
+        const allCandidates = Array.from(new Set([...actives, ...already]));
 
-            {/* 詳細編集（既配布表示 or 新規） */}
-            <button
-              onClick={() => {
-                if (actives.length === 0 && !property.flyer_distributed) {
-                  alert('設定画面で配布するチラシを選択してください');
-                  return;
-                }
-                const merged = Array.from(new Set([...actives, ...already]));
-                setFlyerSelection(already);
-                (window as any).__flyerCandidates = merged;
-                setShowFlyerPicker(true);
-              }}
-              className={`w-full py-2.5 rounded-xl font-bold text-sm ${
-                property.flyer_distributed
-                  ? 'bg-purple-500 text-white active:bg-purple-600'
-                  : 'bg-purple-50 text-purple-600 border border-purple-300 active:bg-purple-100'
-              }`}
-            >
-              {property.flyer_distributed
-                ? `📄 配布済: ${property.flyer_name || '(名称なし)'}`
-                : '📄 チラシ配布'}
-            </button>
+        if (allCandidates.length === 0) {
+          return (
+            <div className="px-4 py-2">
+              <button
+                onClick={() => alert('設定画面で配布するチラシを選択してください')}
+                className="w-full py-2.5 rounded-xl font-bold text-sm bg-gray-100 text-gray-400"
+              >
+                📄 チラシ未設定（設定画面で追加）
+              </button>
+            </div>
+          );
+        }
+
+        const toggleFlyer = (name: string) => {
+          const has = already.includes(name);
+          const next = has ? already.filter((f) => f !== name) : [...already, name];
+          onUpdate(property.id, {
+            flyer_distributed: next.length > 0 ? new Date().toLocaleString('ja-JP') : '',
+            flyer_name: next.join(', '),
+          });
+        };
+
+        return (
+          <div className="px-4 py-2 space-y-1.5">
+            <p className="text-xs font-bold text-gray-500">📄 チラシ配布（タップで記録/解除）</p>
+            {allCandidates.map((f) => {
+              const recorded = already.includes(f);
+              return (
+                <button
+                  key={f}
+                  onClick={() => toggleFlyer(f)}
+                  className={`w-full py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 justify-center ${
+                    recorded
+                      ? 'bg-purple-500 text-white active:bg-purple-600'
+                      : 'bg-green-50 text-green-700 border border-green-400 active:bg-green-100'
+                  }`}
+                >
+                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded border-2 ${
+                    recorded ? 'bg-white text-purple-600 border-white' : 'border-green-400 bg-white text-green-600'
+                  }`}>
+                    {recorded ? '✓' : '＋'}
+                  </span>
+                  {recorded ? `配布済: ${f}` : `配布記録: ${f}`}
+                </button>
+              );
+            })}
           </div>
         );
       })()}
 
       {/* チラシ配布ピッカー（追加/解除） */}
-      {showFlyerPicker && (
-        <div className="px-4 py-2">
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-3">
-            <p className="text-xs font-bold text-purple-700 mb-2">配布したチラシを選択（追加・解除可）</p>
-            <div className="space-y-1 mb-2">
-              {(() => {
-                const candidates: string[] = (window as any).__flyerCandidates || [];
-                if (candidates.length === 0) {
-                  return <p className="text-xs text-gray-400 py-2">配布中チラシがありません。設定画面で追加してください</p>;
-                }
-                return candidates.map((f) => {
-                  const checked = flyerSelection.includes(f);
-                  return (
-                    <button
-                      key={f}
-                      onClick={() => {
-                        setFlyerSelection((prev) =>
-                          prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]
-                        );
-                      }}
-                      className={`w-full px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-all ${
-                        checked
-                          ? 'bg-purple-500 text-white font-bold'
-                          : 'bg-white text-purple-600 border border-purple-300'
-                      }`}
-                    >
-                      <span className={`inline-flex items-center justify-center w-5 h-5 rounded border-2 ${
-                        checked ? 'bg-white text-purple-600 border-white' : 'border-purple-300'
-                      }`}>
-                        {checked ? '✓' : ''}
-                      </span>
-                      📄 {f}
-                    </button>
-                  );
-                });
-              })()}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowFlyerPicker(false)}
-                className="flex-1 py-2 rounded-lg text-sm font-bold bg-gray-100 text-gray-500"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={() => {
-                  if (flyerSelection.length === 0) {
-                    onUpdate(property.id, { flyer_distributed: '', flyer_name: '' });
-                  } else {
-                    onUpdate(property.id, {
-                      flyer_distributed: new Date().toLocaleString('ja-JP'),
-                      flyer_name: flyerSelection.join(', '),
-                    });
-                  }
-                  setShowFlyerPicker(false);
-                }}
-                className="flex-1 py-2 rounded-lg text-sm font-bold bg-purple-500 text-white"
-              >
-                保存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Actions */}
       <div className="flex gap-2 px-4 py-2">
         <button
