@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import type { Property } from '../types';
 import { gasGet } from '../lib/gasClient';
 import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
+import { parseFlyers } from '../lib/flyerUtils';
 
 interface VisitRecord {
   property_id: string;
@@ -263,23 +264,19 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     filtered.forEach((p) => { if (p.rejection_reason) rejections[p.rejection_reason] = (rejections[p.rejection_reason] || 0) + 1; });
     const rejectionList = Object.entries(rejections).sort((a, b) => b[1] - a[1]);
 
-    // チラシ配布集計（複数チラシは個別にカウント）
-    const flyerDistributedProps = filtered.filter((p: any) => {
-      if (!p.flyer_distributed) return false;
-      return isDateInRange(p.flyer_distributed, dateRange?.start ?? '0000-01-01', dateRange?.end ?? '9999-12-31');
-    });
+    // チラシ配布集計（各チラシの個別配布日が期間内）
+    const rangeStart = dateRange?.start ?? '0000-01-01';
+    const rangeEnd = dateRange?.end ?? '9999-12-31';
     let flyerTotal = 0;
     const flyerByName: Record<string, number> = {};
-    flyerDistributedProps.forEach((p: any) => {
-      const names = String(p.flyer_name || '(名称なし)')
-        .split(',')
-        .map((n: string) => n.trim())
-        .filter((n: string) => n.length > 0);
-      const list = names.length > 0 ? names : ['(名称なし)'];
-      list.forEach((n: string) => {
+    filtered.forEach((p: any) => {
+      const entries = parseFlyers(p.flyer_name, p.flyer_distributed);
+      for (const e of entries) {
+        if (!isDateInRange(e.date, rangeStart, rangeEnd)) continue;
+        const n = e.name || '(名称なし)';
         flyerByName[n] = (flyerByName[n] || 0) + 1;
         flyerTotal++;
-      });
+      }
     });
     const flyerBreakdown = Object.entries(flyerByName).sort((a, b) => b[1] - a[1]);
 

@@ -4,6 +4,7 @@ import { StatusSelector } from './StatusSelector';
 import { getStatusConfig } from '../lib/statusConfig';
 import { gasGet } from '../lib/gasClient';
 import { getActiveFlyers } from './Settings';
+import { parseFlyers, serializeFlyers } from '../lib/flyerUtils';
 
 interface VisitRecord {
   status: string;
@@ -152,15 +153,12 @@ export function PropertyDetail({
         onSelect={(status) => onUpdateStatus(property.id, status)}
       />
 
-      {/* チラシ配布: 配布中チラシを個別ボタンで表示。タップで即記録/解除 */}
+      {/* チラシ配布: 配布中チラシを個別ボタンで表示。タップで即記録/解除（個別日付管理） */}
       {(() => {
         const actives = getActiveFlyers();
-        const already = String(property.flyer_name || '')
-          .split(',')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        // 表示候補 = 配布中チラシ ∪ 既配布チラシ（既配布なのに配布中でないものも残す）
-        const allCandidates = Array.from(new Set([...actives, ...already]));
+        const entries = parseFlyers(property.flyer_name, property.flyer_distributed);
+        const alreadyNames = entries.map((e) => e.name);
+        const allCandidates = Array.from(new Set([...actives, ...alreadyNames]));
 
         if (allCandidates.length === 0) {
           return (
@@ -176,19 +174,25 @@ export function PropertyDetail({
         }
 
         const toggleFlyer = (name: string) => {
-          const has = already.includes(name);
-          const next = has ? already.filter((f) => f !== name) : [...already, name];
-          onUpdate(property.id, {
-            flyer_distributed: next.length > 0 ? new Date().toLocaleString('ja-JP') : '',
-            flyer_name: next.join(', '),
-          });
+          const has = alreadyNames.includes(name);
+          let nextEntries: typeof entries;
+          if (has) {
+            // 解除
+            nextEntries = entries.filter((e) => e.name !== name);
+          } else {
+            // 追加（このチラシだけ今日の日時を記録、他は既存日時を保持）
+            const now = new Date().toLocaleString('ja-JP');
+            nextEntries = [...entries, { name, date: now }];
+          }
+          const serialized = serializeFlyers(nextEntries);
+          onUpdate(property.id, serialized);
         };
 
         return (
           <div className="px-4 py-2 space-y-1.5">
             <p className="text-xs font-bold text-gray-500">📄 チラシ配布（タップで記録/解除）</p>
             {allCandidates.map((f) => {
-              const recorded = already.includes(f);
+              const recorded = alreadyNames.includes(f);
               return (
                 <button
                   key={f}

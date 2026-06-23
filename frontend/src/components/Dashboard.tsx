@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Property } from '../types';
 import { STATUS_LIST, getStatusConfig } from '../lib/statusConfig';
+import { parseFlyers } from '../lib/flyerUtils';
 
 const ADMIN_NAME = '有持';
 
@@ -137,24 +138,17 @@ export function Dashboard({ properties, userName, onClose }: DashboardProps) {
     const appointments = periodVisits.filter((p) => APPO_STATUSES.includes(p.status)).length;
     const contracts = periodVisits.filter((p) => p.status === 'contract').length;
 
-    // チラシ配布集計（flyer_distributed が期間内のもの）
-    // 複数チラシ配布時は flyer_name がカンマ区切り → 1チラシ=1件としてカウント
-    const flyerDistributed = filtered.filter((p) => {
-      if (!p.flyer_distributed) return false;
-      return isDateInRange(p.flyer_distributed, range.start, range.end);
-    });
+    // チラシ配布集計（各チラシの個別配布日が期間内のものを集計）
     let flyerCount = 0;
     const flyerByName: Record<string, number> = {};
-    flyerDistributed.forEach((p) => {
-      const names = (p.flyer_name || '(名称なし)')
-        .split(',')
-        .map((n: string) => n.trim())
-        .filter((n: string) => n.length > 0);
-      const list = names.length > 0 ? names : ['(名称なし)'];
-      list.forEach((n: string) => {
+    filtered.forEach((p) => {
+      const entries = parseFlyers(p.flyer_name, p.flyer_distributed);
+      for (const e of entries) {
+        if (!isDateInRange(e.date, range.start, range.end)) continue;
+        const n = e.name || '(名称なし)';
         flyerByName[n] = (flyerByName[n] || 0) + 1;
         flyerCount++;
-      });
+      }
     });
     const flyerBreakdown = Object.entries(flyerByName).sort((a, b) => b[1] - a[1]);
 

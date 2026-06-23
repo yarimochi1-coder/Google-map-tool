@@ -15,6 +15,7 @@ import { useLayerPins } from './hooks/useLayerPins';
 import { LayerPinDetail } from './components/LayerPinDetail';
 import { NameInputModal } from './components/NameInputModal';
 import { Settings } from './components/Settings';
+import { serializeFlyers } from './lib/flyerUtils';
 
 type View = 'map' | 'dashboard' | 'analytics' | 'plan' | 'settings';
 
@@ -58,7 +59,7 @@ export default function App() {
       if (!newPinLocation) return;
       const now = new Date().toLocaleString('ja-JP');
       const flyers = data.flyerNames ?? [];
-      const hasFlyers = flyers.length > 0;
+      const flyerSerialized = serializeFlyers(flyers.map((n) => ({ name: n, date: now })));
       await addProperty({
         lat: newPinLocation.lat,
         lng: newPinLocation.lng,
@@ -77,8 +78,8 @@ export default function App() {
         revisit: '',
         last_visit_date: now,
         user_id: '',
-        flyer_distributed: hasFlyers ? now : '',
-        flyer_name: hasFlyers ? flyers.join(', ') : '',
+        flyer_distributed: flyerSerialized.flyer_distributed,
+        flyer_name: flyerSerialized.flyer_name,
       });
       setNewPinLocation(null);
       setSelectedProperty(null);
