@@ -164,7 +164,9 @@ export function useProperties() {
 
       await updateProperty(id, {
         status,
-        staff: getStaff(),
+        // 担当は登録者のまま固定（空欄の古いデータだけ補完）。
+        // 上書きすると他人が触った瞬間にそのピンの担当が移ってしまう
+        ...(prop?.staff ? {} : { staff: getStaff() }),
         last_visit_date: now,
         visit_count: alreadyVisitedToday
           ? (prop?.visit_count ?? 0)
@@ -182,7 +184,7 @@ export function useProperties() {
       if (!prop) return;
       await updateProperty(id, {
         visit_count: prop.visit_count + 1,
-        staff: getStaff(),
+        ...(prop.staff ? {} : { staff: getStaff() }),
         last_visit_date: new Date().toLocaleString('ja-JP'),
       });
       await logVisit(id, prop.status, '再訪問');

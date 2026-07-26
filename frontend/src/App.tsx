@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { Property, PropertyStatus, LayerPin, MarkerLayer } from './types';
 import { MapView } from './components/MapView';
 import { PropertyDetail } from './components/PropertyDetail';
@@ -16,6 +16,7 @@ import { LayerPinDetail } from './components/LayerPinDetail';
 import { NameInputModal } from './components/NameInputModal';
 import { Settings } from './components/Settings';
 import { serializeFlyers } from './lib/flyerUtils';
+import { filterByStaff } from './lib/permissions';
 
 type View = 'map' | 'dashboard' | 'analytics' | 'plan' | 'settings';
 
@@ -91,9 +92,15 @@ export default function App() {
     setSelectedProperty(p);
   }, []);
 
+  // 自分が担当のピンだけ表示する（管理者は全件）
+  const visibleProperties = useMemo(
+    () => filterByStaff(properties, userName),
+    [properties, userName]
+  );
+
   // Keep selected property in sync with properties array
   const currentSelected = selectedProperty
-    ? properties.find((p) => p.id === selectedProperty.id) ?? selectedProperty
+    ? visibleProperties.find((p) => p.id === selectedProperty.id) ?? null
     : null;
 
   // 名前未入力なら入力モーダルを表示
@@ -107,7 +114,7 @@ export default function App() {
       <div className="flex-1 relative">
         {view === 'map' ? (
           <MapView
-            properties={properties}
+            properties={visibleProperties}
             layerPins={layerPins}
             isOnline={isOnline}
             isSyncing={isSyncing}
@@ -125,12 +132,12 @@ export default function App() {
           />
         ) : view === 'analytics' ? (
           <Analytics
-            properties={properties}
+            properties={visibleProperties}
             onClose={() => setView('map')}
           />
         ) : view === 'plan' ? (
           <VisitPlan
-            properties={properties}
+            properties={visibleProperties}
             userPosition={userPosition}
             onSelectProperty={(p) => { setSelectedProperty(p); setView('map'); }}
             onClose={() => setView('map')}

@@ -2,8 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Property } from '../types';
 import { STATUS_LIST, getStatusConfig } from '../lib/statusConfig';
 import { parseFlyers } from '../lib/flyerUtils';
-
-const ADMIN_NAME = '有持';
+import { getStaffName, isAdmin as checkIsAdmin } from '../lib/permissions';
 
 // ファネル階層: 成約は上流すべてに加算される
 // 接触 = 不在以外のすべて（応答あり）
@@ -91,16 +90,12 @@ function isDateInRange(dateStr: any, start: string, end: string): boolean {
   return padded >= start && padded <= end;
 }
 
-function getStaffName(staff: string | undefined): string {
-  return (!staff || staff === '未設定') ? ADMIN_NAME : staff;
-}
-
 export function Dashboard({ properties, userName, onClose }: DashboardProps) {
   const [period, setPeriod] = useState<Period>('day');
   const [baseDate, setBaseDate] = useState(
     new Date().toISOString().split('T')[0]
   );
-  const isAdmin = userName === ADMIN_NAME;
+  const isAdmin = checkIsAdmin(userName);
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
 
   const range = useMemo(() => getDateRange(baseDate, period), [baseDate, period]);
