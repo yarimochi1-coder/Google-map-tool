@@ -24,6 +24,8 @@ const TALK_STATUSES = ['ng', 'measured', 'appointment', 'contract'];
 const MEASURED_STATUSES = ['measured', 'appointment', 'contract'];
 const APPO_STATUSES = ['appointment', 'contract'];
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+// 時間別対面率ランキングで「参考値」扱いにしない最低訪問件数
+const HOUR_MIN_SAMPLE = 10;
 
 type DateRange = { start: string; end: string; label: string };
 
@@ -188,13 +190,29 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     // --- visit_historyベースの分析 ---
     const fh = filterHistory(visitHistory, dateRange);
 
-    // 時間帯別 (10〜19)
+    // 時間帯別: 表示範囲は実データから決める（10〜19時固定だと早朝・夜の訪問が黙って消える）
     type HourData = { total: number; contacted: number; faced: number };
-    const hourly: Record<number, HourData> = {};
-    for (let h = 10; h <= 19; h++) hourly[h] = { total: 0, contacted: 0, faced: 0 };
+    // parseHourには生値を渡す（String()で包むとDateオブジェクト用の分岐が効かない）
+    const parsedHours = fh.map((r) => parseHour(r.visited_at));
+    let knownHourCount = 0;
+    let minHour = 10;
+    let maxHour = 19;
+    parsedHours.forEach((h) => {
+      if (h === null || h < 0 || h > 23) return;
+      knownHourCount++;
+      if (h < minHour) minHour = h;
+      if (h > maxHour) maxHour = h;
+    });
+    // 時刻が読めなかった件数（nの内訳を正しく示すため）
+    const hourUnknownCount = fh.length - knownHourCount;
+    const hourStart = minHour;
+    const hourEnd = maxHour;
 
-    fh.forEach((r) => {
-      const h = parseHour(String(r.visited_at || ''));
+    const hourly: Record<number, HourData> = {};
+    for (let h = hourStart; h <= hourEnd; h++) hourly[h] = { total: 0, contacted: 0, faced: 0 };
+
+    fh.forEach((r, i) => {
+      const h = parsedHours[i];
       if (h !== null && hourly[h] !== undefined) {
         hourly[h].total++;
         // 在宅 = 不在以外すべて（誰かが応答した）
@@ -203,6 +221,26 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         if (FACE_STATUSES.includes(r.status)) hourly[h].faced++;
       }
     });
+
+    // 時間別対面率ランキング
+    // サンプルが少ない時間帯（1件で100%など）を上位に出さないよう下限件数を設ける
+    const hourRows = Object.entries(hourly)
+      .map(([h, d]) => ({
+        hour: Number(h),
+        total: d.total,
+        faced: d.faced,
+        faceRate: d.total > 0 ? (d.faced / d.total) * 100 : 0,
+      }))
+      .filter((r) => r.total > 0);
+    const reliableRows = hourRows.filter((r) => r.total >= HOUR_MIN_SAMPLE);
+    const hourRankingReliable = reliableRows.length > 0;
+    const hourRanking = (hourRankingReliable ? reliableRows : hourRows)
+      .slice()
+      .sort((a, b) => b.faceRate - a.faceRate || b.total - a.total);
+    // 時間別の基準線（全時間帯をまとめた対面率）
+    const hourTotalVisits = hourRows.reduce((sum, r) => sum + r.total, 0);
+    const hourTotalFaced = hourRows.reduce((sum, r) => sum + r.faced, 0);
+    const faceRateOverall = hourTotalVisits > 0 ? (hourTotalFaced / hourTotalVisits) * 100 : 0;
 
     // 曜日別
     type DowData = { total: number; contacted: number; faced: number };
@@ -234,14 +272,14 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     type CrossCell = { total: number; contacted: number; faced: number };
     const cross: Record<string, CrossCell> = {};
     for (let d = 0; d < 7; d++) {
-      for (let h = 10; h <= 19; h++) {
+      for (let h = hourStart; h <= hourEnd; h++) {
         cross[`${d}_${h}`] = { total: 0, contacted: 0, faced: 0 };
       }
     }
-    fh.forEach((r) => {
+    fh.forEach((r, i) => {
       const dow = parseDow(String(r.visited_at || ''));
-      const h = parseHour(String(r.visited_at || ''));
-      if (dow === null || h === null || h < 10 || h > 19) return;
+      const h = parsedHours[i];
+      if (dow === null || h === null || h < hourStart || h > hourEnd) return;
       const key = `${dow}_${h}`;
       cross[key].total++;
       if (r.status !== 'absent') cross[key].contacted++;
@@ -290,6 +328,8 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     return {
       totalVisits, funnel, overallRate, avgVisits, avgAmount,
       hourly, dowStats, weekday, weekend, cross,
+      hourStart, hourEnd, hourUnknownCount,
+      hourRanking, hourRankingReliable, faceRateOverall,
       staffList, rejectionList,
       historyCount: fh.length,
       flyerTotal, flyerBreakdown,
@@ -302,6 +342,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
   if (!stats) return <div className="absolute inset-0 bg-gray-50 flex items-center justify-center"><p className="text-gray-400">データがありません</p></div>;
 
   const maxHourly = Math.max(...Object.values(stats.hourly).map((d) => d.total), 1);
+  const hourList = Array.from({ length: stats.hourEnd - stats.hourStart + 1 }, (_, i) => stats.hourStart + i);
 
   return (
     <div className="absolute inset-0 bg-gray-50 overflow-y-auto pb-16">
@@ -423,7 +464,46 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         </div>
       )}
       <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">時間帯別分析（10〜19時）<span className="text-xs font-normal text-gray-400 ml-1">n={stats.historyCount}</span></h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-2">時間帯別分析（{stats.hourStart}〜{stats.hourEnd}時）<span className="text-xs font-normal text-gray-400 ml-1">n={stats.historyCount}</span></h2>
+        {stats.hourUnknownCount > 0 && (
+          <p className="text-[10px] text-gray-400 mb-2">※ {stats.hourUnknownCount}件は時刻が記録されていないため時間帯別の集計から除外しています。</p>
+        )}
+
+        {/* 時間別対面率ランキング */}
+        {stats.hourRanking.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm p-3 mb-2">
+            <div className="flex items-baseline justify-between mb-2">
+              <h3 className="text-xs font-bold text-gray-700">対面率が高い時間帯</h3>
+              <span className="text-[10px] text-gray-400">全体平均 {stats.faceRateOverall.toFixed(1)}%</span>
+            </div>
+            <div className="divide-y text-[11px]">
+              {stats.hourRanking.map((r, i) => {
+                const diff = r.faceRate - stats.faceRateOverall;
+                return (
+                  <div key={r.hour} className="flex items-center py-1">
+                    <span className={`w-5 font-bold ${i === 0 ? 'text-orange-500' : 'text-gray-300'}`}>{i + 1}</span>
+                    <span className="w-12 font-bold text-gray-700">{r.hour}時</span>
+                    <span className="w-16 font-bold text-orange-500">{r.faceRate.toFixed(1)}%</span>
+                    <span className="flex-1">
+                      <span className="inline-block h-1.5 rounded bg-orange-400 align-middle"
+                        style={{ width: `${Math.min(100, (r.faceRate / Math.max(stats.hourRanking[0].faceRate, 1)) * 100)}%` }} />
+                    </span>
+                    <span className={`w-12 text-right font-bold ${diff >= 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                      {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
+                    </span>
+                    <span className="w-16 text-right text-gray-400">対面{r.faced}/{r.total}件</span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-2">
+              {stats.hourRankingReliable
+                ? `訪問${HOUR_MIN_SAMPLE}件以上の時間帯のみ掲載（件数が少ない時間帯は率が跳ねるため）。対面率 = 対面数 ÷ 訪問数。`
+                : `どの時間帯も訪問${HOUR_MIN_SAMPLE}件未満のため参考値です。対面率 = 対面数 ÷ 訪問数。`}
+            </p>
+          </div>
+        )}
+
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="flex items-end gap-1 h-28">
             {Object.entries(stats.hourly).map(([h, d]) => {
@@ -532,7 +612,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
             <thead>
               <tr>
                 <th className="p-1 text-gray-500">曜日＼時間</th>
-                {Array.from({ length: 10 }, (_, i) => i + 10).map((h) => (
+                {hourList.map((h) => (
                   <th key={h} className="p-1 text-gray-500 text-center">{h}</th>
                 ))}
               </tr>
@@ -543,7 +623,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
                   <td className={`p-1 font-bold ${dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
                     {DOW_LABELS[dow]}
                   </td>
-                  {Array.from({ length: 10 }, (_, i) => i + 10).map((h) => {
+                  {hourList.map((h) => {
                     const cell = stats.cross[`${dow}_${h}`];
                     if (!cell || cell.total === 0) return <td key={h} className="p-1 text-center text-gray-200">-</td>;
                     const rate = crossMetric === 'contact'
