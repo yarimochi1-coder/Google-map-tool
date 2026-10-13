@@ -1,5 +1,5 @@
+import { getPasscode, resetPasscode } from './passcode';
 const GAS_URL = import.meta.env.VITE_GAS_URL as string;
-const GAS_API_KEY = import.meta.env.VITE_GAS_API_KEY as string;
 
 export interface GasResponse<T = unknown> {
   success: boolean;
@@ -13,7 +13,7 @@ export async function gasGet<T = unknown>(
 ): Promise<GasResponse<T>> {
   const url = new URL(GAS_URL);
   url.searchParams.set('action', action);
-  url.searchParams.set('apiKey', GAS_API_KEY);
+  url.searchParams.set('apiKey', getPasscode());
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
@@ -22,13 +22,13 @@ export async function gasGet<T = unknown>(
   if (!res.ok) {
     return { success: false, error: `HTTP ${res.status}` };
   }
-  return res.json();
+  return checkAuth(await res.json());
 }
 
 export async function gasPost<T = unknown>(
   body: Record<string, unknown>
 ): Promise<GasResponse<T>> {
-  const payload = { ...body, apiKey: GAS_API_KEY };
+  const payload = { ...body, apiKey: getPasscode() };
 
   const res = await fetch(GAS_URL, {
     method: 'POST',
@@ -39,5 +39,10 @@ export async function gasPost<T = unknown>(
   if (!res.ok) {
     return { success: false, error: `HTTP ${res.status}` };
   }
-  return res.json();
+  return checkAuth(await res.json());
+}
+
+function checkAuth<T>(json: GasResponse<T>): GasResponse<T> {
+  if (!json.success && json.error === 'Unauthorized') resetPasscode();
+  return json;
 }

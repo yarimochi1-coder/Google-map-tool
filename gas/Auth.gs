@@ -5,8 +5,8 @@
 function validateApiKey(key) {
   var storedKey = PropertiesService.getScriptProperties().getProperty('API_KEY');
   if (!storedKey) {
-    // If no API key is set, allow all requests (initial setup)
-    return true;
+    // 合言葉が未設定なら誰も通さない（設定漏れでデータが丸見えになるのを防ぐ）
+    return false;
   }
-  return key === storedKey;
+  return typeof key === 'string' && key === storedKey;
 }

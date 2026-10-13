@@ -30,6 +30,10 @@ jobs:
 
       - name: Install and Build
         working-directory: frontend
+        env:
+          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
+          VITE_GOOGLE_MAPS_MAP_ID: ${{ secrets.VITE_GOOGLE_MAPS_MAP_ID }}
+          VITE_GAS_URL: ${{ secrets.VITE_GAS_URL }}
         run: |
           npm ci
           npm run build
