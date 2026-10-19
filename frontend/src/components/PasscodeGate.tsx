@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react';
-import { getPasscode, setPasscode } from '../lib/passcode';
+import { getPasscode, setPasscode, wasPasscodeRejected } from '../lib/passcode';
 
 export function PasscodeGate({ children }: { children: ReactNode }) {
   const [code, setCode] = useState(getPasscode());
   const [input, setInput] = useState('');
+  const [rejected] = useState(wasPasscodeRejected);
 
   if (code) return <>{children}</>;
 
@@ -21,6 +22,11 @@ export function PasscodeGate({ children }: { children: ReactNode }) {
         <p className="text-sm text-gray-500 mb-4">
           管理者から共有された合言葉を入力してください。この端末では次回から入力不要です。
         </p>
+        {rejected && (
+          <p className="text-sm text-red-600 mb-4">
+            合言葉が違うか、変更されました。もう一度入力してください。
+          </p>
+        )}
         <input
           type="password"
           value={input}
