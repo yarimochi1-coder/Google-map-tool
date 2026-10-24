@@ -9,7 +9,8 @@ export function PasscodeGate({ children }: { children: ReactNode }) {
   if (code) return <>{children}</>;
 
   const submit = () => {
-    const trimmed = input.trim();
+    // 日本語キーボードの全角英数字・前後の空白で一致しなくなるのを防ぐ
+    const trimmed = input.normalize('NFKC').trim();
     if (!trimmed) return;
     setPasscode(trimmed);
     setCode(trimmed);
@@ -33,6 +34,9 @@ export function PasscodeGate({ children }: { children: ReactNode }) {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
           autoComplete="current-password"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           className="w-full border rounded-lg px-4 py-3 text-base mb-4 focus:outline-none focus:ring-2 focus:ring-blue-400"
           autoFocus
         />
