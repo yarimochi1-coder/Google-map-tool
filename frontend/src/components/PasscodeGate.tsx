@@ -9,8 +9,7 @@ export function PasscodeGate({ children }: { children: ReactNode }) {
   if (code) return <>{children}</>;
 
   const submit = () => {
-    // 日本語キーボードの全角英数字・前後の空白で一致しなくなるのを防ぐ
-    const trimmed = input.normalize('NFKC').trim();
+    const trimmed = input.trim();
     if (!trimmed) return;
     setPasscode(trimmed);
     setCode(trimmed);
