@@ -45,6 +45,7 @@ export interface Property {
   revisit: string; // '' or ISO date when flagged for revisit
   flyer_distributed?: string; // 配布日時（空=未配布）
   flyer_name?: string; // 配布したチラシ名
+  car_grade?: string; // 車のグレード（例: 新型・高級車 / こだわり車）。空=未記録
 }
 
 export type MarkerLayer = 'visit' | 'our_work' | 'target';

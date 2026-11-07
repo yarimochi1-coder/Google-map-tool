@@ -2,12 +2,13 @@ import { useState } from 'react';
 import type { PropertyStatus } from '../types';
 import { STATUS_LIST } from '../lib/statusConfig';
 import { getActiveFlyers } from './Settings';
+import { CarGradeSelector } from './CarGradeSelector';
 
 interface NewPinModalProps {
   lat: number;
   lng: number;
   defaultStaff?: string;
-  onConfirm: (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerNames: string[] }) => void;
+  onConfirm: (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerNames: string[]; carGrade: string }) => void;
   onCancel: () => void;
 }
 
@@ -16,6 +17,7 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
   const [status, setStatus] = useState<PropertyStatus>('absent');
   const [staff] = useState(defaultStaff ?? '');
   const [memo, setMemo] = useState('');
+  const [carGrade, setCarGrade] = useState('');
   const activeFlyers = getActiveFlyers();
   // 初期は全て未チェック（実際に配ったものだけチェックする）
   const [selectedFlyers, setSelectedFlyers] = useState<string[]>([]);
@@ -86,6 +88,14 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
             </div>
           </div>
 
+          {/* 車のグレード */}
+          <div>
+            <label className="text-sm font-bold text-gray-700">🚗 車のグレード</label>
+            <div className="mt-1">
+              <CarGradeSelector value={carGrade} onChange={setCarGrade} />
+            </div>
+          </div>
+
           {/* Memo */}
           <div>
             <label className="text-sm font-bold text-gray-700">メモ</label>
@@ -140,7 +150,7 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
               キャンセル
             </button>
             <button
-              onClick={() => onConfirm({ name, status, staff, memo, flyerNames: selectedFlyers })}
+              onClick={() => onConfirm({ name, status, staff, memo, flyerNames: selectedFlyers, carGrade })}
               className="flex-1 py-3 rounded-xl font-bold text-sm bg-blue-500 text-white active:bg-blue-600"
             >
               ピンを追加

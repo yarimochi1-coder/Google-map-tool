@@ -3,6 +3,7 @@ import type { Property } from '../types';
 import { gasGet } from '../lib/gasClient';
 import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
 import { parseFlyers } from '../lib/flyerUtils';
+import { CAR_GRADE_ORDER } from '../lib/carGrade';
 
 interface VisitRecord {
   property_id: string;
@@ -260,6 +261,21 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     });
     const staffList = Object.entries(staffMap).sort((a, b) => b[1].visits - a[1].visits);
 
+    // 車のグレード別（ファネル階層適用）
+    const carMap: Record<string, { visits: number; contacts: number; appos: number; contracts: number }> = {};
+    visitProps.forEach((p) => {
+      if (!p.car_grade) return;
+      const g = p.car_grade;
+      if (!carMap[g]) carMap[g] = { visits: 0, contacts: 0, appos: 0, contracts: 0 };
+      carMap[g].visits++;
+      if (CONTACT_STATUSES_FUNNEL.includes(p.status)) carMap[g].contacts++;
+      if (APPO_STATUSES.includes(p.status)) carMap[g].appos++;
+      if (p.status === 'contract') carMap[g].contracts++;
+    });
+    const carOrder = (g: string) => { const i = CAR_GRADE_ORDER.indexOf(g); return i === -1 ? 999 : i; };
+    const carList = Object.entries(carMap).sort((a, b) => carOrder(a[0]) - carOrder(b[0]));
+    const carRecorded = carList.reduce((sum, [, d]) => sum + d.visits, 0);
+
     const rejections: Record<string, number> = {};
     filtered.forEach((p) => { if (p.rejection_reason) rejections[p.rejection_reason] = (rejections[p.rejection_reason] || 0) + 1; });
     const rejectionList = Object.entries(rejections).sort((a, b) => b[1] - a[1]);
@@ -291,6 +307,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       totalVisits, funnel, overallRate, avgVisits, avgAmount,
       hourly, dowStats, weekday, weekend, cross,
       staffList, rejectionList,
+      carList, carRecorded,
       historyCount: fh.length,
       flyerTotal, flyerBreakdown,
       inquiryTotal, inquiries: filteredInquiries,
@@ -588,6 +605,31 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* 車のグレード別 */}
+      {stats.carList.length > 0 && (
+        <div className="px-4 pb-4">
+          <h2 className="text-sm font-bold text-gray-700 mb-2">
+            🚗 車のグレード別 <span className="text-xs font-normal text-gray-400">記録 {stats.carRecorded}/{stats.totalVisits}件</span>
+          </h2>
+          <div className="bg-white rounded-xl shadow-sm p-3">
+            <div className="divide-y text-[11px]">
+              <div className="flex py-1 font-bold text-gray-500">
+                <span className="w-28">グレード</span><span className="flex-1 text-center">訪問</span><span className="flex-1 text-center">接触率</span><span className="flex-1 text-center">アポ率</span><span className="flex-1 text-center">成約</span>
+              </div>
+              {stats.carList.map(([grade, d]) => (
+                <div key={grade} className="flex py-1.5">
+                  <span className="w-28 font-bold text-gray-700">{grade}</span>
+                  <span className="flex-1 text-center text-gray-400">{d.visits}件</span>
+                  <span className="flex-1 text-center font-bold text-green-600">{Math.round(d.contacts / d.visits * 100)}%</span>
+                  <span className="flex-1 text-center font-bold text-blue-600">{(d.appos / d.visits * 100).toFixed(1)}%</span>
+                  <span className="flex-1 text-center font-bold text-red-600">{d.contracts}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

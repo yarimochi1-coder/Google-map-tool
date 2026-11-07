@@ -5,6 +5,7 @@ import { getStatusConfig } from '../lib/statusConfig';
 import { gasGet } from '../lib/gasClient';
 import { getActiveFlyers } from './Settings';
 import { parseFlyers, serializeFlyers } from '../lib/flyerUtils';
+import { CarGradeSelector } from './CarGradeSelector';
 
 interface VisitRecord {
   status: string;
@@ -152,6 +153,17 @@ export function PropertyDetail({
         currentStatus={property.status}
         onSelect={(status) => onUpdateStatus(property.id, status)}
       />
+
+      {/* 車のグレード: タップで即記録/再タップで解除 */}
+      <div className="px-4 py-2">
+        <p className="text-xs font-bold text-gray-500 mb-1.5">
+          🚗 車のグレード{property.car_grade ? `：${property.car_grade}` : '（タップで記録）'}
+        </p>
+        <CarGradeSelector
+          value={property.car_grade ?? ''}
+          onChange={(v) => onUpdate(property.id, { car_grade: v })}
+        />
+      </div>
 
       {/* チラシ配布: 配布中チラシを個別ボタンで表示。タップで即記録/解除（個別日付管理） */}
       {(() => {

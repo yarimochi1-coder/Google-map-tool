@@ -56,7 +56,7 @@ export default function App() {
   );
 
   const handleConfirmNewPin = useCallback(
-    async (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerNames?: string[] }) => {
+    async (data: { name: string; status: PropertyStatus; staff: string; memo: string; flyerNames?: string[]; carGrade?: string }) => {
       if (!newPinLocation) return;
       const now = new Date().toLocaleString('ja-JP');
       const flyers = data.flyerNames ?? [];
@@ -81,6 +81,7 @@ export default function App() {
         user_id: '',
         flyer_distributed: flyerSerialized.flyer_distributed,
         flyer_name: flyerSerialized.flyer_name,
+        car_grade: data.carGrade ?? '',
       });
       setNewPinLocation(null);
       setSelectedProperty(null);

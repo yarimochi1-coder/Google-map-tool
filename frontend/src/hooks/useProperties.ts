@@ -134,7 +134,7 @@ export function useProperties() {
       for (const key of Object.keys(updated)) {
         const val = (updated as any)[key];
         if (val === undefined || val === null) continue;
-        if (val === '' && key !== 'memo' && key !== 'rejection_reason' && key !== 'revisit') continue;
+        if (val === '' && key !== 'memo' && key !== 'rejection_reason' && key !== 'revisit' && key !== 'car_grade') continue;
         cleanedForSync[key] = val;
       }
       cleanedForSync.id = id; // id は必須なので必ず入れる
