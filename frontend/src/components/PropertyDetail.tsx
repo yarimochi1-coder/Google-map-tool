@@ -104,6 +104,12 @@ export function PropertyDetail({
     return `${d.getMonth() + 1}/${d.getDate()}`;
   }
 
+  // チラシ配布日 "2026/11/8 14:30:00" → "11/8"
+  function formatFlyerDate(dateStr: string): string {
+    const m = String(dateStr || '').match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+    return m ? `${Number(m[2])}/${Number(m[3])}` : '';
+  }
+
   const statusConfig = getStatusConfig(property.status);
 
   return (
@@ -187,43 +193,56 @@ export function PropertyDetail({
           );
         }
 
-        const toggleFlyer = (name: string) => {
-          const has = alreadyNames.includes(name);
-          let nextEntries: typeof entries;
-          if (has) {
-            // 解除
-            nextEntries = entries.filter((e) => e.name !== name);
-          } else {
-            // 追加（このチラシだけ今日の日時を記録、他は既存日時を保持）
-            const now = new Date().toLocaleString('ja-JP');
-            nextEntries = [...entries, { name, date: now }];
-          }
+        // 同じチラシを同じ家に何回入れても、タップのたびに1回分として記録する
+        const addFlyer = (name: string) => {
+          const now = new Date().toLocaleString('ja-JP');
+          onUpdate(property.id, serializeFlyers([...entries, { name, date: now }]));
+        };
+
+        // 押し間違い用: そのチラシの最後の1回分だけ取り消す
+        const undoFlyer = (name: string) => {
+          const lastIdx = entries.map((e) => e.name).lastIndexOf(name);
+          if (lastIdx === -1) return;
+          if (!confirm(`「${name}」の配布記録を1回分取り消しますか？`)) return;
+          const nextEntries = entries.filter((_, i) => i !== lastIdx);
           const serialized = serializeFlyers(nextEntries);
-          onUpdate(property.id, serialized);
+          // 空文字はGAS側で上書き保護されるため、全件取り消し時は空配列を送る
+          onUpdate(property.id, nextEntries.length === 0 ? { ...serialized, flyer_name: '[]' } : serialized);
         };
 
         return (
           <div className="px-4 py-2 space-y-1.5">
-            <p className="text-xs font-bold text-gray-500">📄 チラシ配布（タップで記録/解除）</p>
+            <p className="text-xs font-bold text-gray-500">📄 チラシ配布（タップするたびに1回記録）</p>
             {allCandidates.map((f) => {
-              const recorded = alreadyNames.includes(f);
+              const mine = entries.filter((e) => e.name === f);
+              const count = mine.length;
+              const lastDate = count > 0 ? formatFlyerDate(mine[count - 1].date) : '';
               return (
-                <button
-                  key={f}
-                  onClick={() => toggleFlyer(f)}
-                  className={`w-full py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 justify-center ${
-                    recorded
-                      ? 'bg-purple-500 text-white active:bg-purple-600'
-                      : 'bg-green-50 text-green-700 border border-green-400 active:bg-green-100'
-                  }`}
-                >
-                  <span className={`inline-flex items-center justify-center w-5 h-5 rounded border-2 ${
-                    recorded ? 'bg-white text-purple-600 border-white' : 'border-green-400 bg-white text-green-600'
-                  }`}>
-                    {recorded ? '✓' : '＋'}
-                  </span>
-                  {recorded ? `配布済: ${f}` : `配布記録: ${f}`}
-                </button>
+                <div key={f} className="flex gap-1.5">
+                  <button
+                    onClick={() => addFlyer(f)}
+                    className={`flex-1 py-2 rounded-xl font-bold text-sm flex flex-col items-center justify-center ${
+                      count > 0
+                        ? 'bg-purple-500 text-white active:bg-purple-600'
+                        : 'bg-green-50 text-green-700 border border-green-400 active:bg-green-100'
+                    }`}
+                  >
+                    <span>＋ 配布記録: {f}</span>
+                    {count > 0 && (
+                      <span className="text-[11px] font-normal opacity-90">
+                        これまで{count}回{lastDate ? `・最終 ${lastDate}` : ''}
+                      </span>
+                    )}
+                  </button>
+                  {count > 0 && (
+                    <button
+                      onClick={() => undoFlyer(f)}
+                      className="px-3 rounded-xl text-xs font-bold bg-gray-100 text-gray-500 active:bg-gray-200 shrink-0"
+                    >
+                      1回<br />取消
+                    </button>
+                  )}
+                </div>
               );
             })}
           </div>
