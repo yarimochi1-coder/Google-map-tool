@@ -88,13 +88,15 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
             </div>
           </div>
 
-          {/* 車のグレード */}
-          <div>
-            <label className="text-sm font-bold text-gray-700">🚗 車のグレード</label>
-            <div className="mt-1">
-              <CarGradeSelector value={carGrade} onChange={setCarGrade} />
+          {/* 車のグレード（施工済みのときだけ） */}
+          {status === 'completed' && (
+            <div>
+              <label className="text-sm font-bold text-gray-700">🚗 車のグレード</label>
+              <div className="mt-1">
+                <CarGradeSelector value={carGrade} onChange={setCarGrade} />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Memo */}
           <div>
@@ -150,7 +152,7 @@ export function NewPinModal({ lat, lng, defaultStaff, onConfirm, onCancel }: New
               キャンセル
             </button>
             <button
-              onClick={() => onConfirm({ name, status, staff, memo, flyerNames: selectedFlyers, carGrade })}
+              onClick={() => onConfirm({ name, status, staff, memo, flyerNames: selectedFlyers, carGrade: status === 'completed' ? carGrade : '' })}
               className="flex-1 py-3 rounded-xl font-bold text-sm bg-blue-500 text-white active:bg-blue-600"
             >
               ピンを追加
