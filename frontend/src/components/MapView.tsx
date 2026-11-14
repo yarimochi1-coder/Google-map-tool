@@ -1,11 +1,11 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect, memo } from 'react';
 import {
   APIProvider,
   Map,
   AdvancedMarker,
   useMap,
 } from '@vis.gl/react-google-maps';
-import type { Property, LayerPin } from '../types';
+import type { Property, LayerPin, PropertyStatus } from '../types';
 import { getStatusConfig } from '../lib/statusConfig';
 
 const LAYER_STYLES = {
@@ -24,6 +24,91 @@ const MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID as string;
 const NAME_LABEL_MIN_ZOOM = 16;
 // フルサイズピンを表示するズーム閾値（これ以上でフル、未満でドット）
 const FULL_PIN_MIN_ZOOM = 14;
+// 画面外のピンも少し先まで描いておく割合（少し動かしただけでピンが出たり消えたりしないように）
+const BOUNDS_PADDING = 0.25;
+// ドット表示のとき、この大きさ(px)の升目ごとに1個だけ描く。ドットは10pxなので見た目はほぼ変わらず、描く数を大きく減らせる
+const DOT_CELL_PX = 6;
+// 同じ升目に複数あるとき、どのピンを残すか（大きいほど優先）
+const STATUS_PRIORITY: Record<PropertyStatus, number> = {
+  contract: 11, appointment: 10, measured: 9, ng: 8, instant_return: 7,
+  grandfather: 6, grandmother: 5, child: 4, interphone: 3, impossible: 2,
+  completed: 1, absent: 0,
+};
+
+const PIN_HEAD_STYLE = {
+  width: 28, height: 28, borderRadius: '50% 50% 50% 0',
+  border: '2px solid #fff',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  color: '#fff', fontSize: 12, fontWeight: 'bold',
+  transform: 'rotate(-45deg)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+} as const;
+const PIN_LABEL_STYLE = {
+  fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)',
+  padding: '0 4px', borderRadius: 3, marginTop: 2,
+  color: '#333', whiteSpace: 'nowrap', maxWidth: 80,
+  overflow: 'hidden', textOverflow: 'ellipsis',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+} as const;
+const PIN_WRAPPER_STYLE = { display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' } as const;
+
+// ピン1本ずつを memo 化する。GPS の更新や画面の再描画のたびに全ピンの位置を貼り直すと、地図を動かしたときにカクつくため
+const PropertyMarker = memo(function PropertyMarker({
+  property, isDot, showLabel, onSelect,
+}: {
+  property: Property;
+  isDot: boolean;
+  showLabel: boolean;
+  onSelect: (p: Property) => void;
+}) {
+  const cfg = getStatusConfig(property.status);
+  const position = useMemo(() => ({ lat: property.lat, lng: property.lng }), [property.lat, property.lng]);
+  const handleClick = useCallback(() => onSelect(property), [onSelect, property]);
+  return (
+    <AdvancedMarker position={position} onClick={handleClick} title={property.name || cfg.label}>
+      {isDot ? (
+        <div style={{
+          width: 10, height: 10, borderRadius: '50%',
+          backgroundColor: cfg.color, border: '1.5px solid #fff',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+        }} />
+      ) : (
+        <div style={PIN_WRAPPER_STYLE}>
+          <div style={{ ...PIN_HEAD_STYLE, backgroundColor: cfg.color }}>
+            <span style={{ transform: 'rotate(45deg)' }}>{cfg.icon}</span>
+          </div>
+          {property.name && showLabel && <span style={PIN_LABEL_STYLE}>{property.name}</span>}
+        </div>
+      )}
+    </AdvancedMarker>
+  );
+});
+
+const LayerMarker = memo(function LayerMarker({
+  pin, onSelect,
+}: {
+  pin: LayerPin;
+  onSelect: (p: LayerPin) => void;
+}) {
+  const style = pin.layer === 'target' ? LAYER_STYLES.target : LAYER_STYLES.our_work;
+  const position = useMemo(() => ({ lat: pin.lat, lng: pin.lng }), [pin.lat, pin.lng]);
+  const handleClick = useCallback(() => onSelect(pin), [onSelect, pin]);
+  return (
+    <AdvancedMarker position={position} title={pin.name} onClick={handleClick}>
+      <div style={PIN_WRAPPER_STYLE}>
+        <div style={{ ...PIN_HEAD_STYLE, backgroundColor: style.bg, fontWeight: 'normal' }}>
+          <span style={{ transform: 'rotate(45deg)' }}>{style.icon}</span>
+        </div>
+        {pin.name && <span style={PIN_LABEL_STYLE}>{pin.name}</span>}
+      </div>
+    </AdvancedMarker>
+  );
+});
+
+interface ViewBox { minLat: number; maxLat: number; minLng: number; maxLng: number }
+
+function inBox(box: ViewBox, lat: number, lng: number): boolean {
+  return lat >= box.minLat && lat <= box.maxLat && lng >= box.minLng && lng <= box.maxLng;
+}
 
 interface MapViewProps {
   properties: Property[];
@@ -59,9 +144,6 @@ function MapContent({
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   // Add mode: which type of pin to add on long press
   const [addMode, setAddMode] = useState<'visit' | 'our_work' | 'target'>('visit');
-
-  const ourWorkPins = layerPins.filter((p) => p.layer === 'our_work');
-  const targetPins = layerPins.filter((p) => p.layer === 'target');
 
   // Compass/heading mode: rotate map to match device direction
   const [headingMode, setHeadingMode] = useState(false);
@@ -151,19 +233,50 @@ function MapContent({
     }
   }, [userPosition, map, isFollowing, headingMode, startCompass, stopCompass]);
 
-  // 個別ピンのみ（クラスター無効）
-  // ビューポート内のピンだけ描画（パフォーマンス対策）
-  const markers = useMemo(() => {
-    if (!bounds) return { clusters: [], singles: properties };
+  // 表示範囲（少し外側まで広げる）。地図の準備ができるまでは何も描かない
+  const viewBox = useMemo<ViewBox | null>(() => {
+    if (!bounds) return null;
     const ne = bounds.getNorthEast();
     const sw = bounds.getSouthWest();
-    const minLat = sw.lat(), maxLat = ne.lat();
-    const minLng = sw.lng(), maxLng = ne.lng();
-    const singles = properties.filter(
-      (p) => p.lat >= minLat && p.lat <= maxLat && p.lng >= minLng && p.lng <= maxLng
+    const padLat = (ne.lat() - sw.lat()) * BOUNDS_PADDING;
+    const padLng = (ne.lng() - sw.lng()) * BOUNDS_PADDING;
+    return {
+      minLat: sw.lat() - padLat, maxLat: ne.lat() + padLat,
+      minLng: sw.lng() - padLng, maxLng: ne.lng() + padLng,
+    };
+  }, [bounds]);
+
+  const isDot = zoom < FULL_PIN_MIN_ZOOM;
+  const showLabel = zoom >= NAME_LABEL_MIN_ZOOM;
+
+  // 表示範囲内のピンだけ描画。ドット表示のときは重なって見えないピンを間引く
+  const visibleProperties = useMemo(() => {
+    if (!viewBox) return [];
+    const inView = properties.filter((p) => inBox(viewBox, p.lat, p.lng));
+    if (!isDot || !map) return inView;
+
+    const div = map.getDiv();
+    const cellLat = (viewBox.maxLat - viewBox.minLat) / ((div.clientHeight * (1 + BOUNDS_PADDING * 2)) / DOT_CELL_PX);
+    const cellLng = (viewBox.maxLng - viewBox.minLng) / ((div.clientWidth * (1 + BOUNDS_PADDING * 2)) / DOT_CELL_PX);
+    if (!(cellLat > 0) || !(cellLng > 0)) return inView;
+
+    const best = new globalThis.Map<string, Property>();
+    for (const p of inView) {
+      const key = `${Math.floor(p.lat / cellLat)}:${Math.floor(p.lng / cellLng)}`;
+      const cur = best.get(key);
+      if (!cur || (STATUS_PRIORITY[p.status] ?? 0) > (STATUS_PRIORITY[cur.status] ?? 0)) best.set(key, p);
+    }
+    return Array.from(best.values());
+  }, [viewBox, properties, isDot, map]);
+
+  const visibleLayerPins = useMemo(() => {
+    if (!viewBox) return [];
+    return layerPins.filter((p) =>
+      ((p.layer === 'our_work' && showOurWork) || (p.layer === 'target' && showTarget)) &&
+      inBox(viewBox, p.lat, p.lng)
     );
-    return { clusters: [] as { id: number; lat: number; lng: number; properties: Property[] }[], singles };
-  }, [bounds, properties]);
+  }, [viewBox, layerPins, showOurWork, showTarget]);
+
 
   // bounds/zoom 更新は onIdle に任せて、ここでは何もしない
   // （ズーム/パン中の毎フレーム再レンダリングを防ぐ）
@@ -334,93 +447,13 @@ function MapContent({
         style={{ width: '100%', height: '100%' }}
       >
         {/* Visit markers (個別表示・ズームによってドット/フルピン切替) */}
-        {showVisit && markers.singles.map((p) => {
-          const cfg = getStatusConfig(p.status);
-          const isDot = zoom < FULL_PIN_MIN_ZOOM;
-          const showLabel = zoom >= NAME_LABEL_MIN_ZOOM;
-          return (
-            <AdvancedMarker
-              key={p.id}
-              position={{ lat: p.lat, lng: p.lng }}
-              onClick={() => onSelectProperty(p)}
-              title={p.name || cfg.label}
-            >
-              {isDot ? (
-                <div style={{
-                  width: 10, height: 10, borderRadius: '50%',
-                  backgroundColor: cfg.color, border: '1.5px solid #fff',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-                }} />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50% 50% 50% 0',
-                    backgroundColor: cfg.color, border: '2px solid #fff',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#fff', fontSize: 12, fontWeight: 'bold',
-                    transform: 'rotate(-45deg)', boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-                  }}>
-                    <span style={{ transform: 'rotate(45deg)' }}>{cfg.icon}</span>
-                  </div>
-                  {p.name && showLabel && (
-                    <span style={{
-                      fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)',
-                      padding: '0 4px', borderRadius: 3, marginTop: 2,
-                      color: '#333', whiteSpace: 'nowrap', maxWidth: 80,
-                      overflow: 'hidden', textOverflow: 'ellipsis',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                    }}>
-                      {p.name}
-                    </span>
-                  )}
-                </div>
-              )}
-            </AdvancedMarker>
-          );
-        })}
-
-        {/* Our work pins (green) */}
-        {showOurWork && ourWorkPins.map((p) => (
-          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name} onClick={() => onSelectLayerPin(p)}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50% 50% 50% 0',
-                backgroundColor: LAYER_STYLES.our_work.bg, border: '2px solid #fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontSize: 12, transform: 'rotate(-45deg)',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-              }}>
-                <span style={{ transform: 'rotate(45deg)' }}>{LAYER_STYLES.our_work.icon}</span>
-              </div>
-              {p.name && (
-                <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: '0 4px', borderRadius: 3, marginTop: 2, color: '#333', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-                  {p.name}
-                </span>
-              )}
-            </div>
-          </AdvancedMarker>
+        {showVisit && visibleProperties.map((p) => (
+          <PropertyMarker key={p.id} property={p} isDot={isDot} showLabel={showLabel} onSelect={onSelectProperty} />
         ))}
 
-        {/* Target pins (orange) */}
-        {showTarget && targetPins.map((p) => (
-          <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }} title={p.name} onClick={() => onSelectLayerPin(p)}>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', transform: 'translate(0, 10px)' }}>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50% 50% 50% 0',
-                backgroundColor: LAYER_STYLES.target.bg, border: '2px solid #fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontSize: 12, transform: 'rotate(-45deg)',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
-              }}>
-                <span style={{ transform: 'rotate(45deg)' }}>{LAYER_STYLES.target.icon}</span>
-              </div>
-              {p.name && (
-                <span style={{ fontSize: 10, backgroundColor: 'rgba(255,255,255,0.9)', padding: '0 4px', borderRadius: 3, marginTop: 2, color: '#333', whiteSpace: 'nowrap', maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
-                  {p.name}
-                </span>
-              )}
-            </div>
-          </AdvancedMarker>
+        {/* 自社施工(緑)・ターゲット(橙)ピン */}
+        {visibleLayerPins.map((p) => (
+          <LayerMarker key={p.id} pin={p} onSelect={onSelectLayerPin} />
         ))}
 
         {/* GPS blue dot with direction */}
