@@ -4,6 +4,7 @@ import { gasGet } from '../lib/gasClient';
 import { PAST_DAILY_STATS, PAST_TOTALS, type PastDailyStat } from '../lib/pastData';
 import { parseFlyers } from '../lib/flyerUtils';
 import { CAR_GRADE_ORDER } from '../lib/carGrade';
+import { getDayType, DAY_TYPE_LABELS, type DayType } from '../lib/holidays';
 
 interface VisitRecord {
   property_id: string;
@@ -25,6 +26,18 @@ const TALK_STATUSES = ['ng', 'measured', 'appointment', 'contract'];
 const MEASURED_STATUSES = ['measured', 'appointment', 'contract'];
 const APPO_STATUSES = ['appointment', 'contract'];
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土'];
+// 曜日別・クロス分析で、祝日・連休の日を曜日から外してまとめる行
+const HOLIDAY_ROW = 7;
+const DOW_ROWS = [1, 2, 3, 4, 5, 6, 0, HOLIDAY_ROW];
+
+function rowLabel(row: number): string {
+  return row === HOLIDAY_ROW ? '祝・連休' : DOW_LABELS[row];
+}
+
+function rowColor(row: number): string {
+  if (row === HOLIDAY_ROW) return 'text-purple-600';
+  return row === 0 ? 'text-red-500' : row === 6 ? 'text-blue-500' : 'text-gray-700';
+}
 
 type DateRange = { start: string; end: string; label: string };
 
@@ -69,27 +82,36 @@ function parseHour(dateStr: any): number | null {
   return null;
 }
 
-function parseDow(dateStr: any): number | null {
+function parseDay(dateStr: any): Date | null {
   if (dateStr instanceof Date && !isNaN(dateStr.getTime())) {
-    return dateStr.getDay();
+    return dateStr;
   }
   const s = String(dateStr || '');
   // try direct parse first
   const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.getDay();
+  if (!isNaN(d.getTime())) return d;
   // manual parse
   const datePart = s.split(' ')[0].split('T')[0].replace(/\//g, '-');
   const d2 = new Date(datePart);
-  return isNaN(d2.getTime()) ? null : d2.getDay();
+  return isNaN(d2.getTime()) ? null : d2;
+}
+
+// 曜日別・クロス分析の行（0〜6=曜日、7=祝日・連休）
+function parseDowRow(dateStr: string): number | null {
+  const d = parseDay(dateStr);
+  if (!d) return null;
+  return getDayType(d) === 'holiday' ? HOLIDAY_ROW : d.getDay();
 }
 
 // visit_historyをフィルタ
 // 同日同物件は1回だけカウント（ステータス修正や重複を除外）
 // ただし memo='再訪問' は明示的な再訪問なのでカウント
-function filterHistory(history: VisitRecord[], dateRange: DateRange | null): VisitRecord[] {
+// 名前空欄の家の「不在」はチラシだけの家なので、訪問に数えない（ファネル分析と同じ基準）
+function filterHistory(history: VisitRecord[], dateRange: DateRange | null, noNameIds: Set<string>): VisitRecord[] {
   const visitedKey = new Set<string>();
   return history.filter((r) => {
     if (r.memo === 'ステータス修正') return false;
+    if (r.status === 'absent' && noNameIds.has(String(r.property_id))) return false;
     if (r.status === 'completed' || r.status === 'contract') return false;
     if (dateRange && !isDateInRange(r.visited_at, dateRange.start, dateRange.end)) return false;
     // 再訪問ボタンで追加した記録は常にカウント
@@ -187,7 +209,8 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     const avgAmount = amounts.length > 0 ? Math.round(amounts.reduce((a, b) => a + b, 0) / amounts.length) : 0;
 
     // --- visit_historyベースの分析 ---
-    const fh = filterHistory(visitHistory, dateRange);
+    const noNameIds = new Set(properties.filter((p) => !(p.name || '').trim()).map((p) => String(p.id)));
+    const fh = filterHistory(visitHistory, dateRange, noNameIds);
 
     // 時間帯別 (10〜19)
     type HourData = { total: number; contacted: number; faced: number };
@@ -205,13 +228,13 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       }
     });
 
-    // 曜日別
+    // 曜日別（祝日・連休の日は曜日から外して「祝・連休」の行に入れる）
     type DowData = { total: number; contacted: number; faced: number };
     const dowStats: Record<number, DowData> = {};
-    for (let d = 0; d < 7; d++) dowStats[d] = { total: 0, contacted: 0, faced: 0 };
+    for (const d of DOW_ROWS) dowStats[d] = { total: 0, contacted: 0, faced: 0 };
 
     fh.forEach((r) => {
-      const dow = parseDow(String(r.visited_at || ''));
+      const dow = parseDowRow(String(r.visited_at || ''));
       if (dow !== null) {
         dowStats[dow].total++;
         if (r.status !== 'absent') dowStats[dow].contacted++;
@@ -219,13 +242,17 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
       }
     });
 
-    // 平日 vs 土日
-    const weekday = { total: 0, contacted: 0, faced: 0 };
-    const weekend = { total: 0, contacted: 0, faced: 0 };
+    // 平日・土曜・日曜・祝日連休
+    const dayTypeStats: Record<DayType, DowData> = {
+      weekday: { total: 0, contacted: 0, faced: 0 },
+      sat: { total: 0, contacted: 0, faced: 0 },
+      sun: { total: 0, contacted: 0, faced: 0 },
+      holiday: { total: 0, contacted: 0, faced: 0 },
+    };
     fh.forEach((r) => {
-      const dow = parseDow(String(r.visited_at || ''));
-      if (dow === null) return;
-      const bucket = (dow === 0 || dow === 6) ? weekend : weekday;
+      const day = parseDay(String(r.visited_at || ''));
+      if (day === null) return;
+      const bucket = dayTypeStats[getDayType(day)];
       bucket.total++;
       if (r.status !== 'absent') bucket.contacted++;
       if (FACE_STATUSES.includes(r.status)) bucket.faced++;
@@ -234,13 +261,13 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
     // クロス分析: 曜日×時間帯
     type CrossCell = { total: number; contacted: number; faced: number };
     const cross: Record<string, CrossCell> = {};
-    for (let d = 0; d < 7; d++) {
+    for (const d of DOW_ROWS) {
       for (let h = 10; h <= 19; h++) {
         cross[`${d}_${h}`] = { total: 0, contacted: 0, faced: 0 };
       }
     }
     fh.forEach((r) => {
-      const dow = parseDow(String(r.visited_at || ''));
+      const dow = parseDowRow(String(r.visited_at || ''));
       const h = parseHour(String(r.visited_at || ''));
       if (dow === null || h === null || h < 10 || h > 19) return;
       const key = `${dow}_${h}`;
@@ -305,7 +332,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
 
     return {
       totalVisits, funnel, overallRate, avgVisits, avgAmount,
-      hourly, dowStats, weekday, weekend, cross,
+      hourly, dowStats, dayTypeStats, cross,
       staffList, rejectionList,
       carList, carRecorded,
       historyCount: fh.length,
@@ -462,6 +489,7 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-green-500" />在宅率</span>
             <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-orange-500" />対面率</span>
           </div>
+          <p className="mt-1 text-[10px] text-gray-400">※チラシだけの家（不在・名前なし）は、時間帯・曜日・クロス分析の訪問に数えていません</p>
           {/* テーブル */}
           <div className="mt-3 divide-y text-[11px]">
             <div className="flex py-1 font-bold text-gray-500">
@@ -488,16 +516,16 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="divide-y text-[11px]">
             <div className="flex py-1 font-bold text-gray-500">
-              <span className="w-10">曜日</span><span className="flex-1 text-center">訪問</span><span className="flex-1 text-center">在宅率</span><span className="flex-1 text-center">対面率</span><span className="flex-1 text-center">接触率</span>
+              <span className="w-14">曜日</span><span className="flex-1 text-center">訪問</span><span className="flex-1 text-center">在宅率</span><span className="flex-1 text-center">対面率</span><span className="flex-1 text-center">接触率</span>
             </div>
-            {[1, 2, 3, 4, 5, 6, 0].map((dow) => {
+            {DOW_ROWS.map((dow) => {
               const d = stats.dowStats[dow];
               if (d.total === 0) return null;
               const contactRate = Math.round(d.contacted / d.total * 100);
               const faceRate = Math.round(d.faced / d.total * 100);
               return (
                 <div key={dow} className="flex py-1.5">
-                  <span className={`w-10 font-bold ${dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{DOW_LABELS[dow]}</span>
+                  <span className={`w-14 font-bold ${rowColor(dow)}`}>{rowLabel(dow)}</span>
                   <span className="flex-1 text-center text-gray-400">{d.total}件</span>
                   <span className="flex-1 text-center font-bold text-green-600">{contactRate}%</span>
                   <span className="flex-1 text-center font-bold text-orange-500">{faceRate}%</span>
@@ -506,18 +534,23 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
               );
             })}
           </div>
+          <p className="mt-2 text-[10px] text-gray-400">※祝日・振替休日と、祝日につながる土日（3連休など）、年末年始（12/29〜1/3）は「祝・連休」に分けています</p>
         </div>
       </div>}
 
-      {/* 平日 vs 土日 - 10件以上で表示 */}
+      {/* 平日・土曜・日曜・祝日連休 - 10件以上で表示 */}
       {stats.historyCount >= 1 && <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-gray-700 mb-2">平日 vs 土日 <span className="text-xs font-normal text-gray-400">n={stats.historyCount}</span></h2>
+        <h2 className="text-sm font-bold text-gray-700 mb-2">平日・土日・祝日連休 <span className="text-xs font-normal text-gray-400">n={stats.historyCount}</span></h2>
         <div className="bg-white rounded-xl shadow-sm p-3">
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: '平日', data: stats.weekday, color: '#2196F3' },
-              { label: '土日', data: stats.weekend, color: '#FF9800' },
-            ].map(({ label, data, color }) => {
+              { type: 'weekday' as const, color: '#2196F3' },
+              { type: 'sat' as const, color: '#FF9800' },
+              { type: 'sun' as const, color: '#F44336' },
+              { type: 'holiday' as const, color: '#9C27B0' },
+            ].map(({ type, color }) => {
+              const label = DAY_TYPE_LABELS[type];
+              const data = stats.dayTypeStats[type];
               const contactRate = data.total > 0 ? Math.round(data.contacted / data.total * 100) : 0;
               const faceRate = data.total > 0 ? Math.round(data.faced / data.total * 100) : 0;
               return (
@@ -555,10 +588,10 @@ export function Analytics({ properties, onClose }: AnalyticsProps) {
               </tr>
             </thead>
             <tbody>
-              {[1, 2, 3, 4, 5, 6, 0].map((dow) => (
+              {DOW_ROWS.map((dow) => (
                 <tr key={dow}>
-                  <td className={`p-1 font-bold ${dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>
-                    {DOW_LABELS[dow]}
+                  <td className={`p-1 font-bold whitespace-nowrap ${rowColor(dow)}`}>
+                    {rowLabel(dow)}
                   </td>
                   {Array.from({ length: 10 }, (_, i) => i + 10).map((h) => {
                     const cell = stats.cross[`${dow}_${h}`];
